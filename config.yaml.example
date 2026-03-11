@@ -1,0 +1,31 @@
+server:
+  port: 8080
+  host: "0.0.0.0"
+
+categories:
+  - "硬件故障"
+  - "网络问题"
+  - "软件支持"
+  - "会议设备"
+
+database:
+  filename: "tickets.db"
+
+log:
+  level: "info"
+
+# AI配置（可选）
+# 用于自动生成工单标题和选择分类
+ai:
+  api_key: ""      # API密钥
+  base_url: ""     # API地址
+  model: ""        # 模型名称
+
+# PDF报告配置（可选）
+pdf:
+  font_path: ""    # 中文字体路径，如 C:/Windows/Fonts/simhei.ttf
+
+# 思源笔记配置（可选）
+siyuan:
+  api_url: "http://127.0.0.1:6806"
+  notebook_id: ""  # 笔记本ID

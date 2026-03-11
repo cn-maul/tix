@@ -1,0 +1,26 @@
+# Binary
+tix
+tix.exe
+
+# Data
+*.db
+*.db-journal
+
+# Config
+config.yaml
+
+# Logs
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+/tix

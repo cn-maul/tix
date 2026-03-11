@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tix - 工单管理</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: '#3b82f6',
+            success: '#22c55e',
+            danger: '#ef4444',
+            warning: '#f59e0b',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .ticket-item { transition: all 0.15s ease; }
+    .ticket-item:hover { transform: translateX(4px); }
+    .ticket-item.selected { border-left: 4px solid #3b82f6; }
+    .ticket-item.selected { background: #eff6ff; }
+    .dark .ticket-item.selected { background: #1e3a5f; }
+  </style>
+</head>
+<body class="bg-slate-100 dark:bg-slate-900 min-h-screen transition-colors">
+  <!-- 顶部导航 -->
+  <header class="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 transition-colors">
+    <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div>
+        <h1 class="text-xl font-semibold text-slate-800 dark:text-slate-100">Tix - 工单管理</h1>
+        <p class="text-sm text-slate-500 dark:text-slate-400">共 <span id="totalCount">0</span> 条，<span id="pendingCount">0</span> 条待处理</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="toggleDark()" id="darkBtn" class="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition">
+          <svg id="sunIcon" class="w-5 h-5 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+          </svg>
+          <svg id="moonIcon" class="w-5 h-5 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+          </svg>
+        </button>
+        <button onclick="openSettingsModal()" class="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex gap-4 px-4 py-6 max-w-7xl mx-auto">
+    <!-- 左侧筛选面板 -->
+    <aside class="w-64 shrink-0">
+      <div class="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-4 sticky top-4 transition-colors">
+        <h3 class="font-medium text-slate-800 dark:text-slate-100 mb-4">筛选条件</h3>
+        
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm text-slate-500 dark:text-slate-400 mb-1">搜索发起人</label>
+            <input type="text" id="searchInput" placeholder="输入关键词..." 
+                   class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:border-primary bg-white dark:bg-slate-700 dark:text-slate-100 transition-colors text-sm"
+                   oninput="loadTickets()">
+          </div>
+          
+          <div>
+            <label class="block text-sm text-slate-500 dark:text-slate-400 mb-1">分类</label>
+            <select id="categoryFilter" onchange="loadTickets()" 
+                    class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:border-primary transition-colors text-sm">
+              <option value="">全部分类</option>
+            </select>
+          </div>
+          
+          <div>
+            <label class="block text-sm text-slate-500 dark:text-slate-400 mb-1">状态</label>
+            <select id="statusFilter" onchange="loadTickets()"
+                    class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:border-primary transition-colors text-sm">
+              <option value="">全部状态</option>
+              <option value="false">处理中</option>
+              <option value="true">已完成</option>
+            </select>
+          </div>
+          
+          <div>
+            <label class="block text-sm text-slate-500 dark:text-slate-400 mb-1">开始日期</label>
+            <input type="date" id="startDate" onchange="loadTickets()"
+                   class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:border-primary transition-colors text-sm">
+          </div>
+          
+          <div>
+            <label class="block text-sm text-slate-500 dark:text-slate-400 mb-1">结束日期</label>
+            <input type="date" id="endDate" onchange="loadTickets()"
+                   class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:border-primary transition-colors text-sm">
+          </div>
+          
+          <button onclick="clearFilters()" class="w-full px-3 py-2 text-sm text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition">
+            清除筛选
+          </button>
+          
+          <hr class="border-slate-200 dark:border-slate-700">
+          
+          <button onclick="exportReport()" class="w-full px-3 py-2 text-sm text-white bg-green-500 rounded-lg hover:bg-green-600 transition font-medium">
+            📄 导出PDF报告
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 右侧内容区 -->
+    <div class="flex-1 min-w-0">
+      <!-- 工具栏 -->
+      <div class="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-4 mb-4 transition-colors">
+        <div class="flex items-center gap-3">
+          <button onclick="openCreateModal()" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-blue-600 transition font-medium">
+            + 新建
+          </button>
+          
+          <div id="batchActions" class="hidden flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-200 dark:border-blue-800">
+            <span id="selectedCount" class="text-sm text-primary font-medium">0</span>
+            <button onclick="batchComplete()" id="btnComplete" class="px-3 py-1 text-sm text-success border border-success rounded hover:bg-success hover:text-white transition">完成</button>
+            <button onclick="openEditModal()" id="btnEdit" class="px-3 py-1 text-sm text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-600 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition">编辑</button>
+            <button onclick="batchDelete()" id="btnDelete" class="px-3 py-1 text-sm text-danger border border-danger rounded hover:bg-danger hover:text-white transition">删除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 工单列表 -->
+      <div id="ticketsList" class="space-y-2"></div>
+      
+      <!-- 分页 -->
+      <div id="pagination" class="flex justify-center gap-1 mt-6"></div>
+    </div>
+  </main>
+
+  <!-- 创建/编辑模态框 -->
+  <div id="ticketModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+    <div class="bg-white dark:bg-slate-800 rounded-xl w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto transition-colors">
+      <div class="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
+        <h2 id="modalTitle" class="font-semibold text-lg text-slate-800 dark:text-slate-100">新建工单</h2>
+        <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-2xl leading-none">&times;</button>
+      </div>
+      <div class="p-4 space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">发起人 *</label>
+          <input type="text" id="formInitiator" maxlength="50" 
+                 class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:border-primary bg-white dark:bg-slate-700 dark:text-slate-100 transition-colors">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">分类</label>
+          <select id="formCategory" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:border-primary bg-white dark:bg-slate-700 dark:text-slate-100 transition-colors">
+            <option value="">AI自动选择</option>
+          </select>
+          <p class="text-xs text-slate-400 mt-1">留空则由AI根据内容自动选择分类</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">问题描述 *</label>
+          <textarea id="formContent" maxlength="2000" rows="3"
+                    class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:border-primary bg-white dark:bg-slate-700 dark:text-slate-100 resize-none transition-colors"></textarea>
+        </div>
+        <div id="resolutionGroup" class="hidden">
+          <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">解决过程</label>
+          <textarea id="formResolution" maxlength="2000" rows="2"
+                    class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:border-primary bg-white dark:bg-slate-700 dark:text-slate-100 resize-none transition-colors"></textarea>
+        </div>
+        <div id="completedGroup" class="hidden">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="formCompleted" class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary">
+            <span class="text-sm text-slate-700 dark:text-slate-300">标记为已完成</span>
+          </label>
+        </div>
+        <div id="timeGroup" class="hidden">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">创建时间</label>
+              <input type="datetime-local" id="formCreatedAt" step="1"
+                     class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:border-primary bg-white dark:bg-slate-700 dark:text-slate-100 transition-colors">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">完成时间</label>
+              <input type="datetime-local" id="formCompletedAt" step="1"
+                     class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:border-primary bg-white dark:bg-slate-700 dark:text-slate-100 transition-colors">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="flex gap-2 justify-end p-4 border-t border-slate-200 dark:border-slate-700">
+        <button onclick="closeModal()" class="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition">取消</button>
+        <button onclick="saveTicket()" id="btnSaveTicket" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-blue-600 transition">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 设置模态框 -->
+  <div id="settingsModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+    <div class="bg-white dark:bg-slate-800 rounded-xl w-full max-w-xl mx-4 shadow-2xl transition-colors">
+      <!-- 顶部标签页 -->
+      <div class="flex border-b border-slate-200 dark:border-slate-700">
+        <button onclick="switchSettingsTab('ai')" id="tab-ai" class="flex-1 px-6 py-4 text-sm font-medium text-primary dark:text-blue-300 border-b-2 border-blue-500 bg-slate-50 dark:bg-slate-900/30 transition">
+          🤖 AI配置
+        </button>
+        <button onclick="switchSettingsTab('category')" id="tab-category" class="flex-1 px-6 py-4 text-sm font-medium text-slate-500 dark:text-slate-400 border-b-2 border-transparent hover:bg-slate-50 dark:hover:bg-slate-900/30 transition">
+          📁 分类管理
+        </button>
+        <button onclick="switchSettingsTab('data')" id="tab-data" class="flex-1 px-6 py-4 text-sm font-medium text-slate-500 dark:text-slate-400 border-b-2 border-transparent hover:bg-slate-50 dark:hover:bg-slate-900/30 transition">
+          📦 数据管理
+        </button>
+        <button onclick="switchSettingsTab('siyuan')" id="tab-siyuan" class="flex-1 px-6 py-4 text-sm font-medium text-slate-500 dark:text-slate-400 border-b-2 border-transparent hover:bg-slate-50 dark:hover:bg-slate-900/30 transition">
+          📝 思源笔记
+        </button>
+        <button onclick="switchSettingsTab('pdf')" id="tab-pdf" class="flex-1 px-6 py-4 text-sm font-medium text-slate-500 dark:text-slate-400 border-b-2 border-transparent hover:bg-slate-50 dark:hover:bg-slate-900/30 transition">
+          📄 PDF设置
+        </button>
+        <button onclick="closeSettingsModal()" class="px-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl">&times;</button>
+      </div>
+      
+      <!-- 内容区域 -->
+      <div class="max-h-[60vh] overflow-y-auto">
+        <!-- AI配置 -->
+        <div id="panel-ai" class="p-6">
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">配置AI自动生成标题和选择分类</p>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">API密钥 <span class="text-red-500">*</span></label>
+              <input type="password" id="aiApiKey" placeholder="sk-xxxxxxxx" 
+                     class="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">API地址</label>
+              <input type="text" id="aiBaseUrl" placeholder="https://api.openai.com/v1" 
+                     class="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">模型名称</label>
+              <input type="text" id="aiModel" placeholder="gpt-3.5-turbo" 
+                     class="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <p class="text-xs text-slate-400">支持 OpenAI 标准 API（如 DeepSeek、通义千问等）</p>
+            <div class="flex gap-3 pt-2">
+              <button onclick="saveAIConfig()" class="px-5 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium">保存配置</button>
+              <button onclick="testAIConfig()" class="px-5 py-2.5 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition">测试连接</button>
+            </div>
+            <p id="aiStatus" class="text-xs text-slate-400"></p>
+          </div>
+        </div>
+        
+        <!-- 分类管理 -->
+        <div id="panel-category" class="p-6 hidden">
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">管理工单分类</p>
+          <div class="space-y-3" id="categoryList"></div>
+          <div class="mt-4 flex gap-2">
+            <input type="text" id="newCategoryName" placeholder="新分类名称" 
+                   class="flex-1 px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <button onclick="addCategory()" class="px-5 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium">添加</button>
+          </div>
+        </div>
+        
+        <!-- 数据管理 -->
+        <div id="panel-data" class="p-6 hidden">
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">导入导出工单数据</p>
+          <div class="space-y-4">
+            <div class="p-5 bg-slate-50 dark:bg-slate-700/50 rounded-xl">
+              <h4 class="font-medium text-slate-800 dark:text-slate-200 mb-1">导出数据</h4>
+              <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">将所有工单导出为JSON文件，可用于备份或迁移</p>
+              <button onclick="exportData()" class="px-5 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium">导出到本地</button>
+            </div>
+            <div class="p-5 bg-slate-50 dark:bg-slate-700/50 rounded-xl">
+              <h4 class="font-medium text-slate-800 dark:text-slate-200 mb-1">导入数据</h4>
+              <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">从JSON文件导入工单，会追加到现有数据</p>
+              <input type="file" id="importFile" class="hidden" accept=".json" onchange="importData(event)">
+              <button onclick="document.getElementById('importFile').click()" class="px-5 py-2.5 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition font-medium">从本地导入</button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- 思源笔记 -->
+        <div id="panel-siyuan" class="p-6 hidden">
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">推送工单记录到思源笔记</p>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">API地址</label>
+              <input type="text" id="siyuanApiUrl" placeholder="http://127.0.0.1:6806" 
+                     class="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">笔记本ID <span class="text-red-500">*</span></label>
+              <input type="text" id="siyuanNotebookId" placeholder="20260310103508-n8dfouf" 
+                     class="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <p class="text-xs text-slate-400 mt-1">在思源笔记中右键笔记本 → 复制ID</p>
+            </div>
+            <div class="flex gap-3 pt-2">
+              <button onclick="saveSiYuanConfig()" class="px-5 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium">保存配置</button>
+              <button onclick="testSiYuanConfig()" class="px-5 py-2.5 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition">测试连接</button>
+            </div>
+            <p id="siyuanStatus" class="text-xs text-slate-400"></p>
+          </div>
+          <hr class="my-6 border-slate-200 dark:border-slate-700">
+          <div class="p-5 bg-slate-50 dark:bg-slate-700/50 rounded-xl">
+            <h4 class="font-medium text-slate-800 dark:text-slate-200 mb-1">推送到思源</h4>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mb-2">按月份分组生成报告文档，文件名格式如"2026年3月"</p>
+            <ul class="text-xs text-slate-400 mb-4 space-y-1">
+              <li>• 确保思源笔记已启动</li>
+              <li>• 推送会覆盖同名文档</li>
+              <li>• 仅用于展示和报告，无法反向导入</li>
+            </ul>
+            <button onclick="pushToSiyuan()" id="btnPushSiyuan" class="px-5 py-2.5 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition font-medium">推送到思源</button>
+          </div>
+        </div>
+        
+        <!-- PDF设置 -->
+        <div id="panel-pdf" class="p-6 hidden">
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">配置PDF报告导出的字体</p>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">字体文件路径</label>
+              <input type="text" id="pdfFontPath" placeholder="例如: C:/Windows/Fonts/msyh.ttc" 
+                     class="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <p class="text-xs text-slate-400 mt-1" id="pdfFontHint">支持 TTF 和 TTC 格式的中文字体</p>
+            </div>
+            <div class="flex gap-3 pt-2">
+              <button onclick="savePDFConfig()" class="px-5 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium">保存配置</button>
+            </div>
+            <p id="pdfStatus" class="text-xs text-slate-400"></p>
+          </div>
+          <hr class="my-6 border-slate-200 dark:border-slate-700">
+          <div class="p-5 bg-slate-50 dark:bg-slate-700/50 rounded-xl">
+            <h4 class="font-medium text-slate-800 dark:text-slate-200 mb-2">常见字体路径</h4>
+            <ul class="text-xs text-slate-500 space-y-1">
+              <li><strong>Windows:</strong> C:/Windows/Fonts/msyh.ttc (微软雅黑)</li>
+              <li><strong>Windows:</strong> C:/Windows/Fonts/simhei.ttf (黑体)</li>
+              <li><strong>Linux:</strong> /usr/share/fonts/truetype/wqy/wqy-microhei.ttc</li>
+              <li><strong>macOS:</strong> /System/Library/Fonts/PingFang.ttc</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed bottom-4 right-4 px-4 py-2 bg-slate-800 text-white rounded-lg shadow-lg transform translate-y-12 opacity-0 transition-all duration-300"></div>
+
+  <script>
+    const API = '/v1';
+    let categories = [], tickets = [], selectedIds = new Set();
+    let currentPage = 1;
+    const pageSize = 20;
+    let editingId = null;
+
+    // 深色模式
+    function toggleDark() {
+      document.documentElement.classList.toggle('dark');
+      localStorage.setItem('dark', document.documentElement.classList.contains('dark'));
+    }
+
+    // 初始化深色模式
+    if (localStorage.getItem('dark') === 'true' || 
+        (!localStorage.getItem('dark') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('dark');
+    }
+
+    async function init() {
+      await loadCategories();
+      await loadTickets();
+    }
+
+    async function loadCategories() {
+      const res = await fetch(`${API}/categories`);
+      const data = await res.json();
+      categories = data.categories;
+      const select = document.getElementById('categoryFilter');
+      const formSelect = document.getElementById('formCategory');
+      
+      // 筛选器添加全部分类选项
+      select.innerHTML = '<option value="">全部分类</option>';
+      // 表单保留AI自动选择选项
+      formSelect.innerHTML = '<option value="">AI自动选择</option>';
+      
+      categories.forEach(c => {
+        select.innerHTML += `<option value="${c}">${c}</option>`;
+        formSelect.innerHTML += `<option value="${c}">${c}</option>`;
+      });
+    }
+
+    async function loadTickets() {
+      const params = new URLSearchParams();
+      params.set('limit', pageSize);
+      params.set('offset', (currentPage - 1) * pageSize);
+      
+      const search = document.getElementById('searchInput').value.trim();
+      if (search) params.set('initiator', search);
+      
+      const category = document.getElementById('categoryFilter').value;
+      if (category) params.set('category', category);
+      
+      const status = document.getElementById('statusFilter').value;
+      if (status) params.set('completed', status);
+      
+      const startDate = document.getElementById('startDate').value;
+      if (startDate) params.set('start_date', startDate);
+      
+      const endDate = document.getElementById('endDate').value;
+      if (endDate) params.set('end_date', endDate);
+
+      const res = await fetch(`${API}/tickets?${params}`);
+      const data = await res.json();
+      tickets = data.items;
+      
+      document.getElementById('totalCount').textContent = data.total;
+      document.getElementById('pendingCount').textContent = tickets.filter(t => !t.is_completed).length;
+      
+      renderTickets();
+      renderPagination(data.total);
+    }
+
+    function renderTickets() {
+      const container = document.getElementById('ticketsList');
+      if (!tickets.length) {
+        container.innerHTML = `<div class="text-center py-16 text-slate-400 dark:text-slate-500">
+          <div class="text-5xl mb-3">📭</div>
+          <p>暂无工单</p>
+        </div>`;
+        return;
+      }
+
+      container.innerHTML = tickets.map(t => `
+        <div class="ticket-item bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer ${selectedIds.has(t.id) ? 'selected' : ''}"
+             onclick="toggleSelect('${t.id}', event)">
+          <div class="flex items-start gap-3 p-4">
+            <input type="checkbox" ${selectedIds.has(t.id) ? 'checked' : ''} 
+                   onclick="event.stopPropagation(); toggleSelect('${t.id}')"
+                   class="mt-1 w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="font-medium text-slate-800 dark:text-slate-100">${escapeHtml(t.title || t.content.slice(0,20))}</span>
+                <span class="px-2 py-0.5 text-xs font-medium bg-blue-100 dark:bg-blue-900/50 text-primary dark:text-blue-300 rounded">${t.category}</span>
+                <span class="px-2 py-0.5 text-xs font-medium rounded ${t.is_completed ? 'bg-green-100 dark:bg-green-900/50 text-success dark:text-green-300' : 'bg-amber-100 dark:bg-amber-900/50 text-warning dark:text-amber-300'}">
+                  ${t.is_completed ? '已完成' : '处理中'}
+                </span>
+                <span class="text-xs text-slate-400 dark:text-slate-500 ml-auto">${formatTime(t.created_at)}</span>
+              </div>
+              <p class="text-sm text-slate-600 dark:text-slate-400 truncate">${escapeHtml(t.content)}</p>
+              ${t.resolution ? `<p class="text-sm text-success bg-green-50 dark:bg-green-900/30 px-2 py-1 rounded mt-2">✓ ${escapeHtml(t.resolution)}</p>` : ''}
+              <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">发起人：${escapeHtml(t.initiator)}</p>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function toggleSelect(id, e) {
+      if (e && e.target.tagName === 'INPUT') return;
+      selectedIds.has(id) ? selectedIds.delete(id) : selectedIds.add(id);
+      updateBatchActions();
+      renderTickets();
+    }
+
+    function updateBatchActions() {
+      const div = document.getElementById('batchActions');
+      const count = selectedIds.size;
+      if (!count) {
+        div.classList.add('hidden');
+        return;
+      }
+      div.classList.remove('hidden');
+      document.getElementById('selectedCount').textContent = `已选 ${count} 项`;
+      document.getElementById('btnEdit').disabled = count > 1;
+      document.getElementById('btnEdit').classList.toggle('opacity-50', count > 1);
+      const allCompleted = Array.from(selectedIds).every(id => tickets.find(t => t.id === id)?.is_completed);
+      document.getElementById('btnComplete').disabled = allCompleted;
+      document.getElementById('btnComplete').classList.toggle('opacity-50', allCompleted);
+    }
+
+    async function batchComplete() {
+      for (const id of selectedIds) {
+        const t = tickets.find(t => t.id === id);
+        if (t && !t.is_completed) {
+          await fetch(`${API}/tickets/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_completed: true })
+          });
+        }
+      }
+      selectedIds.clear();
+      showToast('已标记完成', 'success');
+      loadTickets();
+    }
+
+    async function batchDelete() {
+      if (!confirm(`确定删除 ${selectedIds.size} 条工单？`)) return;
+      for (const id of selectedIds) {
+        await fetch(`${API}/tickets/${id}`, { method: 'DELETE' });
+      }
+      selectedIds.clear();
+      showToast('删除成功', 'success');
+      loadTickets();
+    }
+
+    function openCreateModal() {
+      editingId = null;
+      document.getElementById('modalTitle').textContent = '新建工单';
+      document.getElementById('formInitiator').value = '';
+      document.getElementById('formCategory').value = '';  // 默认AI自动选择
+      document.getElementById('formContent').value = '';
+      document.getElementById('formResolution').value = '';
+      document.getElementById('resolutionGroup').classList.add('hidden');
+      document.getElementById('completedGroup').classList.add('hidden');
+      document.getElementById('timeGroup').classList.add('hidden');
+      document.getElementById('ticketModal').classList.remove('hidden');
+      document.getElementById('ticketModal').classList.add('flex');
+    }
+
+    function openEditModal() {
+      if (selectedIds.size !== 1) return;
+      editingId = Array.from(selectedIds)[0];
+      const t = tickets.find(t => t.id === editingId);
+      if (!t) return;
+      
+      document.getElementById('modalTitle').textContent = '编辑工单';
+      document.getElementById('formInitiator').value = t.initiator;
+      document.getElementById('formCategory').value = t.category;
+      document.getElementById('formContent').value = t.content;
+      document.getElementById('formResolution').value = t.resolution || '';
+      document.getElementById('formCompleted').checked = t.is_completed;
+      
+      // 转换时间格式: 2026-03-11T10:30:00Z -> 2026-03-11T10:30:00
+      const createdAt = t.created_at ? t.created_at.replace('Z', '').slice(0, 19) : '';
+      document.getElementById('formCreatedAt').value = createdAt;
+      
+      const completedAt = t.completed_at ? t.completed_at.replace('Z', '').slice(0, 19) : '';
+      document.getElementById('formCompletedAt').value = completedAt;
+      
+      document.getElementById('resolutionGroup').classList.remove('hidden');
+      document.getElementById('completedGroup').classList.remove('hidden');
+      document.getElementById('timeGroup').classList.remove('hidden');
+      document.getElementById('ticketModal').classList.remove('hidden');
+      document.getElementById('ticketModal').classList.add('flex');
+    }
+
+    function closeModal() {
+      document.getElementById('ticketModal').classList.add('hidden');
+      document.getElementById('ticketModal').classList.remove('flex');
+    }
+
+    async function pushToSiyuan() {
+      const btn = document.getElementById('btnPushSiyuan');
+      btn.textContent = '推送中...';
+      btn.disabled = true;
+      
+      try {
+        const res = await fetch(`${API}/push-siyuan`, { method: 'POST' });
+        const result = await res.json();
+        
+        if (result.pushed !== undefined) {
+          showToast(`已推送 ${result.pushed} 条工单到 ${result.months} 个月份文档`, 'success');
+          closeSettingsModal();
+        } else {
+          showToast(result.error?.message || '推送失败', 'error');
+        }
+      } catch (e) {
+        showToast('推送失败，请检查思源是否运行', 'error');
+      }
+      
+      btn.textContent = '推送到思源';
+      btn.disabled = false;
+    }
+
+    async function saveTicket() {
+      const btn = document.getElementById('btnSaveTicket');
+      if (btn.disabled) return;  // 防止重复点击
+      
+      const data = {
+        initiator: document.getElementById('formInitiator').value.trim(),
+        category: document.getElementById('formCategory').value,
+        content: document.getElementById('formContent').value.trim()
+      };
+      if (!data.initiator || !data.content) {
+        showToast('请填写必填项', 'error');
+        return;
+      }
+      
+      // 禁用按钮，显示处理中
+      btn.disabled = true;
+      btn.textContent = '处理中...';
+      
+      try {
+        if (editingId) {
+          data.resolution = document.getElementById('formResolution').value.trim();
+          data.is_completed = document.getElementById('formCompleted').checked;
+          const createdAtValue = document.getElementById('formCreatedAt').value;
+          if (createdAtValue) {
+            data.created_at = createdAtValue + 'Z';  // 添加Z表示UTC
+          }
+          const completedAtValue = document.getElementById('formCompletedAt').value;
+          if (completedAtValue) {
+            data.completed_at = completedAtValue + 'Z';
+          }
+          const res = await fetch(`${API}/tickets/${editingId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+          });
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error?.message || '更新失败');
+          }
+          showToast('更新成功', 'success');
+        } else {
+          const res = await fetch(`${API}/tickets`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+          });
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error?.message || '创建失败');
+          }
+          showToast('创建成功', 'success');
+        }
+        closeModal();
+        selectedIds.clear();
+        loadTickets();
+      } catch(e) {
+        showToast(e.message || '操作失败', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '保存';
+      }
+    }
+
+    function openSettingsModal() {
+      document.getElementById('settingsModal').classList.remove('hidden');
+      document.getElementById('settingsModal').classList.add('flex');
+      loadAIConfig();
+      switchSettingsTab('ai');  // 默认显示AI配置
+    }
+
+    function closeSettingsModal() {
+      document.getElementById('settingsModal').classList.add('hidden');
+      document.getElementById('settingsModal').classList.remove('flex');
+    }
+
+    function switchSettingsTab(tab) {
+      // 隐藏所有面板
+      document.querySelectorAll('[id^="panel-"]').forEach(el => el.classList.add('hidden'));
+      // 显示选中的面板
+      document.getElementById('panel-' + tab).classList.remove('hidden');
+      
+      // 更新标签样式
+      document.querySelectorAll('[id^="tab-"]').forEach(el => {
+        el.classList.remove('text-primary', 'dark:text-blue-300', 'border-blue-500', 'bg-slate-50', 'dark:bg-slate-900/30');
+        el.classList.add('text-slate-500', 'dark:text-slate-400', 'border-transparent');
+      });
+      const activeTab = document.getElementById('tab-' + tab);
+      activeTab.classList.remove('text-slate-500', 'dark:text-slate-400', 'border-transparent');
+      activeTab.classList.add('text-primary', 'dark:text-blue-300', 'border-blue-500', 'bg-slate-50', 'dark:bg-slate-900/30');
+      
+      // 加载对应配置
+      if (tab === 'siyuan') loadSiYuanConfig();
+      if (tab === 'category') loadCategoriesConfig();
+      if (tab === 'pdf') loadPDFConfig();
+    }
+
+    // 分类管理
+    async function loadCategoriesConfig() {
+      try {
+        const res = await fetch(`${API}/config/categories`);
+        const data = await res.json();
+        renderCategories(data);
+      } catch(e) {
+        showToast('加载分类失败', 'error');
+      }
+    }
+
+    function renderCategories(categories) {
+      const container = document.getElementById('categoryList');
+      container.innerHTML = categories.map(cat => `
+        <div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+          <div class="flex items-center gap-3">
+            <span class="font-medium text-slate-800 dark:text-slate-200">${escapeHtml(cat.name)}</span>
+            <span class="text-xs text-slate-400">${cat.tickets} 条工单</span>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="editCategory('${escapeHtml(cat.name)}')" class="text-slate-500 hover:text-blue-500 text-sm">编辑</button>
+            <button onclick="deleteCategory('${escapeHtml(cat.name)}', ${cat.tickets})" class="text-slate-500 hover:text-red-500 text-sm">删除</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function addCategory() {
+      const input = document.getElementById('newCategoryName');
+      const name = input.value.trim();
+      if (!name) {
+        showToast('请输入分类名称', 'error');
+        return;
+      }
+      
+      try {
+        const res = await fetch(`${API}/config/categories`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name })
+        });
+        const result = await res.json();
+        if (result.success) {
+          showToast('添加成功', 'success');
+          input.value = '';
+          loadCategoriesConfig();
+          loadCategories();
+        } else {
+          showToast(result.message || '添加失败', 'error');
+        }
+      } catch(e) {
+        showToast('添加失败', 'error');
+      }
+    }
+
+    async function editCategory(oldName) {
+      const newName = prompt('新分类名称：', oldName);
+      if (!newName || newName === oldName) return;
+      
+      try {
+        const res = await fetch(`${API}/config/categories/${encodeURIComponent(oldName)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ new_name: newName })
+        });
+        const result = await res.json();
+        if (result.success) {
+          showToast('修改成功', 'success');
+          loadCategoriesConfig();
+          loadCategories();
+        } else {
+          showToast(result.message || '修改失败', 'error');
+        }
+      } catch(e) {
+        showToast('修改失败', 'error');
+      }
+    }
+
+    async function deleteCategory(name, ticketCount) {
+      if (ticketCount > 0) {
+        // 需要选择转移目标
+        const otherCategories = await getOtherCategories(name);
+        if (otherCategories.length === 0) {
+          showToast('没有其他分类可转移', 'error');
+          return;
+        }
+        
+        const transferTo = prompt(`该分类有 ${ticketCount} 条工单，请输入转移目标分类：\n可选：${otherCategories.join(', ')}`);
+        if (!transferTo) return;
+        
+        try {
+          const res = await fetch(`${API}/config/categories/${encodeURIComponent(name)}?transfer_to=${encodeURIComponent(transferTo)}`, {
+            method: 'DELETE'
+          });
+          const result = await res.json();
+          if (result.success) {
+            showToast(`已删除并转移 ${ticketCount} 条工单`, 'success');
+            loadCategoriesConfig();
+            loadCategories();
+            loadTickets();
+          } else {
+            showToast(result.message || '删除失败', 'error');
+          }
+        } catch(e) {
+          showToast('删除失败', 'error');
+        }
+      } else {
+        if (!confirm(`确定删除分类"${name}"？`)) return;
+        
+        try {
+          const res = await fetch(`${API}/config/categories/${encodeURIComponent(name)}`, {
+            method: 'DELETE'
+          });
+          const result = await res.json();
+          if (result.success) {
+            showToast('删除成功', 'success');
+            loadCategoriesConfig();
+            loadCategories();
+          } else {
+            showToast(result.message || '删除失败', 'error');
+          }
+        } catch(e) {
+          showToast('删除失败', 'error');
+        }
+      }
+    }
+
+    async function getOtherCategories(exclude) {
+      const res = await fetch(`${API}/config/categories`);
+      const data = await res.json();
+      return data.filter(c => c.name !== exclude).map(c => c.name);
+    }
+
+    async function loadAIConfig() {
+      try {
+        const res = await fetch(`${API}/config/ai`);
+        const data = await res.json();
+        document.getElementById('aiApiKey').value = data.api_key || '';
+        document.getElementById('aiBaseUrl').value = data.base_url || '';
+        document.getElementById('aiModel').value = data.model || '';
+        updateAIStatus(data.enabled ? '已配置' : '未配置，将截取前5字作为标题');
+      } catch(e) {
+        updateAIStatus('加载配置失败');
+      }
+    }
+
+    function updateAIStatus(msg, isError = false) {
+      const el = document.getElementById('aiStatus');
+      el.textContent = msg;
+      el.className = 'text-xs ' + (isError ? 'text-red-500' : 'text-slate-400 dark:text-slate-500');
+    }
+
+    async function saveAIConfig() {
+      const data = {
+        api_key: document.getElementById('aiApiKey').value.trim(),
+        base_url: document.getElementById('aiBaseUrl').value.trim(),
+        model: document.getElementById('aiModel').value.trim()
+      };
+      try {
+        const res = await fetch(`${API}/config/ai`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        if (result.success) {
+          showToast('配置已保存', 'success');
+          updateAIStatus(data.api_key ? '已配置' : '未配置');
+        } else {
+          showToast('保存失败', 'error');
+        }
+      } catch(e) {
+        showToast('保存失败', 'error');
+      }
+    }
+
+    async function testAIConfig() {
+      const btn = event.target;
+      btn.disabled = true;
+      btn.textContent = '测试中...';
+      updateAIStatus('正在测试连接...');
+      
+      try {
+        const res = await fetch(`${API}/config/ai/test`, { method: 'POST' });
+        const result = await res.json();
+        if (result.success) {
+          updateAIStatus('✓ 连接成功');
+          showToast('AI连接成功', 'success');
+        } else {
+          updateAIStatus('✗ ' + (result.error || '连接失败'), true);
+        }
+      } catch(e) {
+        updateAIStatus('✗ 连接失败', true);
+      }
+      btn.disabled = false;
+      btn.textContent = '测试连接';
+    }
+
+    // PDF配置
+    async function loadPDFConfig() {
+      try {
+        const res = await fetch(`${API}/config/pdf`);
+        const data = await res.json();
+        document.getElementById('pdfFontPath').value = data.font_path || '';
+        
+        // 显示提示
+        const hint = document.getElementById('pdfFontHint');
+        if (data.default_font) {
+          hint.textContent = `推荐字体: ${data.default_font}`;
+        }
+        if (data.current_system) {
+          const tips = {
+            'windows': 'Windows推荐: C:/Windows/Fonts/msyh.ttc',
+            'darwin': 'macOS推荐: /System/Library/Fonts/PingFang.ttc',
+            'linux': 'Linux推荐: /usr/share/fonts/truetype/wqy/wqy-microhei.ttc'
+          };
+          if (tips[data.current_system]) {
+            document.getElementById('pdfStatus').textContent = tips[data.current_system];
+          }
+        }
+      } catch(e) {
+        console.error('加载PDF配置失败', e);
+      }
+    }
+
+    async function savePDFConfig() {
+      const fontPath = document.getElementById('pdfFontPath').value.trim();
+      try {
+        const res = await fetch(`${API}/config/pdf`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ font_path: fontPath })
+        });
+        const result = await res.json();
+        if (result.success) {
+          showToast('字体配置已保存', 'success');
+        } else {
+          showToast(result.message || '保存失败', 'error');
+        }
+      } catch(e) {
+        showToast('保存失败', 'error');
+      }
+    }
+
+    // 思源配置
+    async function loadSiYuanConfig() {
+      try {
+        const res = await fetch(`${API}/config/siyuan`);
+        const data = await res.json();
+        document.getElementById('siyuanApiUrl').value = data.api_url || '';
+        document.getElementById('siyuanNotebookId').value = data.notebook_id || '';
+        updateSiYuanStatus(data.configured ? '已配置' : '未配置笔记本ID');
+      } catch(e) {
+        updateSiYuanStatus('加载配置失败');
+      }
+    }
+
+    function updateSiYuanStatus(msg, isError = false) {
+      const el = document.getElementById('siyuanStatus');
+      el.textContent = msg;
+      el.className = 'text-xs ' + (isError ? 'text-red-500' : 'text-slate-400 dark:text-slate-500');
+    }
+
+    async function saveSiYuanConfig() {
+      const data = {
+        api_url: document.getElementById('siyuanApiUrl').value.trim(),
+        notebook_id: document.getElementById('siyuanNotebookId').value.trim()
+      };
+      try {
+        const res = await fetch(`${API}/config/siyuan`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        if (result.success) {
+          showToast('配置已保存', 'success');
+          updateSiYuanStatus(data.notebook_id ? '已配置' : '未配置笔记本ID');
+        } else {
+          showToast('保存失败', 'error');
+        }
+      } catch(e) {
+        showToast('保存失败', 'error');
+      }
+    }
+
+    async function testSiYuanConfig() {
+      const btn = event.target;
+      btn.disabled = true;
+      btn.textContent = '测试中...';
+      updateSiYuanStatus('正在测试连接...');
+      
+      try {
+        const res = await fetch(`${API}/config/siyuan/test`, { method: 'POST' });
+        const result = await res.json();
+        if (result.success) {
+          updateSiYuanStatus(result.warning || '✓ 连接成功');
+          showToast(result.warning || '思源连接成功', result.warning ? '' : 'success');
+        } else {
+          updateSiYuanStatus('✗ ' + (result.error || '连接失败'), true);
+        }
+      } catch(e) {
+        updateSiYuanStatus('✗ 连接失败', true);
+      }
+      btn.disabled = false;
+      btn.textContent = '测试连接';
+    }
+
+    async function exportData() {
+      const res = await fetch(`${API}/export`);
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `tickets_${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      showToast('导出成功', 'success');
+      closeSettingsModal();
+    }
+
+    async function exportReport() {
+      // 获取当前筛选条件
+      const params = new URLSearchParams();
+      const startDate = document.getElementById('startDate').value;
+      const endDate = document.getElementById('endDate').value;
+      if (startDate) params.set('start_date', startDate);
+      if (endDate) params.set('end_date', endDate);
+      
+      const url = `${API}/report?${params.toString()}`;
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Tix报告_${new Date().toISOString().slice(0,10)}.pdf`;
+      a.click();
+      showToast('正在生成报告...', 'success');
+    }
+
+    async function importData(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const res = await fetch(`${API}/import`, { method: 'POST', body: formData });
+        const result = await res.json();
+        
+        if (result.imported !== undefined) {
+          let msg = `成功导入 ${result.imported} 条工单`;
+          if (result.config_imported) {
+            msg += '，已恢复AI配置';
+          }
+          showToast(msg, 'success');
+          loadTickets();
+          closeSettingsModal();
+        } else if (result.error) {
+          showToast(result.error.message || '导入失败', 'error');
+        } else {
+          showToast('导入失败', 'error');
+        }
+      } catch(err) {
+        showToast('导入失败: ' + err.message, 'error');
+      }
+      e.target.value = '';
+    }
+
+    function renderPagination(total) {
+      const pages = Math.ceil(total / pageSize);
+      if (pages <= 1) {
+        document.getElementById('pagination').innerHTML = '';
+        return;
+      }
+      let html = '';
+      for (let i = 1; i <= pages && i <= 5; i++) {
+        html += `<button onclick="goToPage(${i})" 
+          class="px-3 py-1 rounded ${i === currentPage ? 'bg-primary text-white' : 'bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'}">${i}</button>`;
+      }
+      document.getElementById('pagination').innerHTML = html;
+    }
+
+    function goToPage(page) {
+      currentPage = page;
+      selectedIds.clear();
+      loadTickets();
+    }
+
+    function formatTime(s) {
+      const d = new Date(s);
+      return `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
+    }
+
+    function escapeHtml(s) {
+      const div = document.createElement('div');
+      div.textContent = s;
+      return div.innerHTML;
+    }
+
+    function clearFilters() {
+      document.getElementById('searchInput').value = '';
+      document.getElementById('categoryFilter').value = '';
+      document.getElementById('statusFilter').value = '';
+      document.getElementById('startDate').value = '';
+      document.getElementById('endDate').value = '';
+      loadTickets();
+    }
+
+    function showToast(msg, type = '') {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.className = 'fixed bottom-4 right-4 px-4 py-2 rounded-lg shadow-lg transform transition-all duration-300 text-white';
+      if (type === 'success') toast.classList.add('bg-success');
+      else if (type === 'error') toast.classList.add('bg-danger');
+      else toast.classList.add('bg-slate-800');
+      toast.classList.remove('translate-y-12', 'opacity-0');
+      setTimeout(() => toast.classList.add('translate-y-12', 'opacity-0'), 2500);
+    }
+
+    init();
+  </script>
+</body>
+</html>
