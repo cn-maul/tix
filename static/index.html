@@ -395,15 +395,16 @@
     async function loadCategories() {
       const res = await fetch(`${API}/categories`);
       const data = await res.json();
-      categories = data.categories;
+      // 兼容数组和对象格式
+      categories = Array.isArray(data) ? data : (data.categories || []);
       const select = document.getElementById('categoryFilter');
       const formSelect = document.getElementById('formCategory');
-      
+
       // 筛选器添加全部分类选项
       select.innerHTML = '<option value="">全部分类</option>';
       // 表单保留AI自动选择选项
       formSelect.innerHTML = '<option value="">AI自动选择</option>';
-      
+
       categories.forEach(c => {
         select.innerHTML += `<option value="${c}">${c}</option>`;
         formSelect.innerHTML += `<option value="${c}">${c}</option>`;
@@ -547,11 +548,14 @@
       document.getElementById('ticketModal').classList.add('flex');
     }
 
-    function openEditModal() {
+    async function openEditModal() {
       if (selectedIds.size !== 1) return;
       editingId = Array.from(selectedIds)[0];
       const t = tickets.find(t => t.id === editingId);
       if (!t) return;
+
+      // 确保分类列表已加载
+      await loadCategories();
 
       document.getElementById('modalTitle').textContent = '编辑工单';
       document.getElementById('formInitiator').value = t.initiator;

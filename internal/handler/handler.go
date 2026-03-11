@@ -213,11 +213,15 @@ func (h *Handler) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 
 	updates := make(map[string]any)
 	if req.Category != nil {
-		if !h.isValidCategory(*req.Category) {
-			h.error(w, 400, "INVALID_CATEGORY", "category not in allowed list")
-			return
+		// 空分类不更新，非空分类需要验证
+		if *req.Category != "" {
+			if !h.isValidCategory(*req.Category) {
+				h.error(w, 400, "INVALID_CATEGORY", "category not in allowed list")
+				return
+			}
+			updates["category"] = *req.Category
 		}
-		updates["category"] = *req.Category
+		// 空分类则不更新，保持原值
 	}
 	if req.Resolution != nil {
 		updates["resolution"] = *req.Resolution
