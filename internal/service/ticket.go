@@ -167,3 +167,10 @@ func (s *TicketService) TestAI(apiKey, baseURL, model string) (string, error) {
 	}}
 	return testAI.callAPI("请回复'OK'")
 }
+
+func (s *TicketService) SelectCategory(content string, categories []string) (string, error) {
+	if s.ai == nil {
+		return "", errors.New("AI not configured")
+	}
+	return s.ai.SelectCategoryFromList(content, categories)
+}

@@ -5,6 +5,8 @@ tix.exe
 # Data
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 
 # Config
 config.yaml

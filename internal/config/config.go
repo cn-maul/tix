@@ -2,7 +2,6 @@ package config
 
 import (
 	"os"
-	"path/filepath"
 	"runtime"
 	"slices"
 
@@ -101,16 +100,10 @@ func DetectFontPath() string {
 
 func Load() (*Config, error) {
 	cfg := DefaultConfig()
-	paths := []string{
-		"./config.yaml",
-		filepath.Join(os.Getenv("HOME"), ".tix", "config.yaml"),
-	}
-	for _, path := range paths {
-		if data, err := os.ReadFile(path); err == nil {
-			if err := yaml.Unmarshal(data, cfg); err != nil {
-				return nil, err
-			}
-			break
+	configPath := "./config.yaml"
+	if data, err := os.ReadFile(configPath); err == nil {
+		if err := yaml.Unmarshal(data, cfg); err != nil {
+			return nil, err
 		}
 	}
 	return cfg, nil
@@ -120,23 +113,12 @@ func (c *Config) IsValidCategory(cat string) bool {
 	return slices.Contains(c.Categories, cat)
 }
 
-// Save 保存配置到文件
+// Save 保存配置到文件（保存在软件根目录）
 func Save(cfg *Config) error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-
-	configDir := filepath.Join(home, ".tix")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return err
-	}
-
-	configPath := filepath.Join(configDir, "config.yaml")
+	configPath := "./config.yaml"
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return err
 	}
-
 	return os.WriteFile(configPath, data, 0644)
 }

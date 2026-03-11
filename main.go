@@ -12,7 +12,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
 	_ "modernc.org/sqlite" // SQLite driver
@@ -29,13 +28,11 @@ func main() {
 	}
 
 	// 首次运行时保存默认配置
-	home, _ := os.UserHomeDir()
-	configPath := filepath.Join(home, ".tix", "config.yaml")
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+	if _, err := os.Stat("config.yaml"); os.IsNotExist(err) {
 		if err := config.Save(cfg); err != nil {
 			log.Printf("⚠️ 无法保存默认配置: %v", err)
 		} else {
-			log.Printf("✓ 已创建默认配置: %s", configPath)
+			log.Printf("✓ 已创建默认配置: config.yaml")
 		}
 	}
 

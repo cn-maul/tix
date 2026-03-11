@@ -12,7 +12,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"runtime"
 	"slices"
 	"sort"
@@ -114,16 +113,24 @@ func (h *Handler) CreateTicket(w http.ResponseWriter, r *http.Request) {
 		req.Priority = model.PriorityNormal
 	}
 
-	// 处理分类
+	// 处理分类：AI自动选择
 	if req.Category == "" {
-		categories := h.cfg.Categories
-		if len(categories) == 0 {
+		if len(h.cfg.Categories) == 0 {
 			h.error(w, 400, "NO_CATEGORY", "请先在设置中创建分类")
 			return
 		}
 		if h.cfg.AI.APIKey == "" {
-			req.Category = categories[0]
+			h.error(w, 400, "AI_NOT_CONFIGURED", "请先在设置中配置AI，或手动选择分类")
+			return
 		}
+		// AI选择分类
+		category, err := h.svc.SelectCategory(req.Content, h.cfg.Categories)
+		if err != nil {
+			log.Printf("AI分类失败: %v", err)
+			h.error(w, 500, "AI_ERROR", "AI分类失败，请手动选择分类")
+			return
+		}
+		req.Category = category
 	}
 
 	t, err := h.svc.Create(&req)
@@ -777,24 +784,11 @@ func (h *Handler) isValidCategory(cat string) bool {
 }
 
 func (h *Handler) saveConfig() error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-
-	configDir := filepath.Join(home, ".tix")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return err
-	}
-
-	configPath := filepath.Join(configDir, "config.yaml")
-
 	data, err := yaml.Marshal(h.cfg)
 	if err != nil {
 		return err
 	}
-
-	return os.WriteFile(configPath, data, 0644)
+	return os.WriteFile("config.yaml", data, 0644)
 }
 
 func (h *Handler) json(w http.ResponseWriter, status int, data any) {

@@ -221,29 +221,36 @@
 
   <!-- 设置模态框 -->
   <div id="settingsModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
-    <div class="bg-white dark:bg-slate-800 rounded-xl w-full max-w-xl mx-4 shadow-2xl transition-colors">
-      <!-- 顶部标签页 -->
-      <div class="flex border-b border-slate-200 dark:border-slate-700">
-        <button onclick="switchSettingsTab('ai')" id="tab-ai" class="flex-1 px-6 py-4 text-sm font-medium text-primary dark:text-blue-300 border-b-2 border-blue-500 bg-slate-50 dark:bg-slate-900/30 transition">
-          🤖 AI配置
-        </button>
-        <button onclick="switchSettingsTab('category')" id="tab-category" class="flex-1 px-6 py-4 text-sm font-medium text-slate-500 dark:text-slate-400 border-b-2 border-transparent hover:bg-slate-50 dark:hover:bg-slate-900/30 transition">
-          📁 分类管理
-        </button>
-        <button onclick="switchSettingsTab('data')" id="tab-data" class="flex-1 px-6 py-4 text-sm font-medium text-slate-500 dark:text-slate-400 border-b-2 border-transparent hover:bg-slate-50 dark:hover:bg-slate-900/30 transition">
-          📦 数据管理
-        </button>
-        <button onclick="switchSettingsTab('siyuan')" id="tab-siyuan" class="flex-1 px-6 py-4 text-sm font-medium text-slate-500 dark:text-slate-400 border-b-2 border-transparent hover:bg-slate-50 dark:hover:bg-slate-900/30 transition">
-          📝 思源笔记
-        </button>
-        <button onclick="switchSettingsTab('pdf')" id="tab-pdf" class="flex-1 px-6 py-4 text-sm font-medium text-slate-500 dark:text-slate-400 border-b-2 border-transparent hover:bg-slate-50 dark:hover:bg-slate-900/30 transition">
-          📄 PDF设置
-        </button>
-        <button onclick="closeSettingsModal()" class="px-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl">&times;</button>
+    <div class="bg-white dark:bg-slate-800 rounded-xl w-full max-w-2xl mx-4 shadow-2xl transition-colors flex">
+      <!-- 左侧导航栏 -->
+      <div class="w-40 border-r border-slate-200 dark:border-slate-700 flex-shrink-0 flex flex-col">
+        <div class="p-4 border-b border-slate-200 dark:border-slate-700">
+          <h3 class="font-semibold text-slate-800 dark:text-slate-200">设置</h3>
+        </div>
+        <nav class="flex-1 p-2 space-y-1">
+          <button onclick="switchSettingsTab('ai')" id="tab-ai" class="w-full text-left px-4 py-2.5 text-sm font-medium text-blue-600 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 rounded-lg transition">
+            AI配置
+          </button>
+          <button onclick="switchSettingsTab('category')" id="tab-category" class="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-lg transition">
+            分类管理
+          </button>
+          <button onclick="switchSettingsTab('data')" id="tab-data" class="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-lg transition">
+            数据管理
+          </button>
+          <button onclick="switchSettingsTab('siyuan')" id="tab-siyuan" class="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-lg transition">
+            思源笔记
+          </button>
+          <button onclick="switchSettingsTab('pdf')" id="tab-pdf" class="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-lg transition">
+            PDF设置
+          </button>
+        </nav>
+        <div class="p-2 border-t border-slate-200 dark:border-slate-700">
+          <button onclick="closeSettingsModal()" class="w-full text-center px-4 py-2 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition">关闭</button>
+        </div>
       </div>
       
-      <!-- 内容区域 -->
-      <div class="max-h-[60vh] overflow-y-auto">
+      <!-- 右侧内容区域 -->
+      <div class="flex-1 max-h-[70vh] overflow-y-auto">
         <!-- AI配置 -->
         <div id="panel-ai" class="p-6">
           <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">配置AI自动生成标题和选择分类</p>
@@ -254,8 +261,8 @@
                      class="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
             </div>
             <div>
-              <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">API地址</label>
-              <input type="text" id="aiBaseUrl" placeholder="https://api.openai.com/v1" 
+              <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">API地址 <span class="text-slate-400 font-normal">(OpenAI标准)</span></label>
+              <input type="text" id="aiBaseUrl" placeholder="https://api.openai.com/v1"
                      class="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
             </div>
             <div>
@@ -687,14 +694,14 @@
       // 显示选中的面板
       document.getElementById('panel-' + tab).classList.remove('hidden');
       
-      // 更新标签样式
+      // 更新标签样式（侧边栏样式）
       document.querySelectorAll('[id^="tab-"]').forEach(el => {
-        el.classList.remove('text-primary', 'dark:text-blue-300', 'border-blue-500', 'bg-slate-50', 'dark:bg-slate-900/30');
-        el.classList.add('text-slate-500', 'dark:text-slate-400', 'border-transparent');
+        el.classList.remove('text-blue-600', 'dark:text-blue-300', 'bg-blue-50', 'dark:bg-blue-900/30');
+        el.classList.add('text-slate-600', 'dark:text-slate-400');
       });
       const activeTab = document.getElementById('tab-' + tab);
-      activeTab.classList.remove('text-slate-500', 'dark:text-slate-400', 'border-transparent');
-      activeTab.classList.add('text-primary', 'dark:text-blue-300', 'border-blue-500', 'bg-slate-50', 'dark:bg-slate-900/30');
+      activeTab.classList.remove('text-slate-600', 'dark:text-slate-400');
+      activeTab.classList.add('text-blue-600', 'dark:text-blue-300', 'bg-blue-50', 'dark:bg-blue-900/30');
       
       // 加载对应配置
       if (tab === 'siyuan') loadSiYuanConfig();
@@ -810,7 +817,7 @@
         document.getElementById('aiApiKey').value = data.api_key || '';
         document.getElementById('aiBaseUrl').value = data.base_url || '';
         document.getElementById('aiModel').value = data.model || '';
-        updateAIStatus(data.enabled ? '已配置' : '未配置，将截取前5字作为标题');
+        updateAIStatus(data.api_key && !data.api_key.startsWith('****') ? '已配置' : '未配置');
       } catch(e) {
         updateAIStatus('加载配置失败');
       }
@@ -835,11 +842,11 @@
           body: JSON.stringify(data)
         });
         const result = await res.json();
-        if (result.success) {
+        if (res.ok) {
           showToast('配置已保存', 'success');
           updateAIStatus(data.api_key ? '已配置' : '未配置');
         } else {
-          showToast('保存失败', 'error');
+          showToast(result.error?.message || '保存失败', 'error');
         }
       } catch(e) {
         showToast('保存失败', 'error');
@@ -855,11 +862,11 @@
       try {
         const res = await fetch(`${API}/config/ai/test`, { method: 'POST' });
         const result = await res.json();
-        if (result.success) {
+        if (res.ok) {
           updateAIStatus('✓ 连接成功');
           showToast('AI连接成功', 'success');
         } else {
-          updateAIStatus('✗ ' + (result.error || '连接失败'), true);
+          updateAIStatus('✗ ' + (result.error?.message || '连接失败'), true);
         }
       } catch(e) {
         updateAIStatus('✗ 连接失败', true);
@@ -904,10 +911,10 @@
           body: JSON.stringify({ font_path: fontPath })
         });
         const result = await res.json();
-        if (result.success) {
+        if (res.ok) {
           showToast('字体配置已保存', 'success');
         } else {
-          showToast(result.message || '保存失败', 'error');
+          showToast(result.error?.message || '保存失败', 'error');
         }
       } catch(e) {
         showToast('保存失败', 'error');
@@ -945,11 +952,11 @@
           body: JSON.stringify(data)
         });
         const result = await res.json();
-        if (result.success) {
+        if (res.ok) {
           showToast('配置已保存', 'success');
           updateSiYuanStatus(data.notebook_id ? '已配置' : '未配置笔记本ID');
         } else {
-          showToast('保存失败', 'error');
+          showToast(result.error?.message || '保存失败', 'error');
         }
       } catch(e) {
         showToast('保存失败', 'error');
@@ -965,11 +972,11 @@
       try {
         const res = await fetch(`${API}/config/siyuan/test`, { method: 'POST' });
         const result = await res.json();
-        if (result.success) {
-          updateSiYuanStatus(result.warning || '✓ 连接成功');
-          showToast(result.warning || '思源连接成功', result.warning ? '' : 'success');
+        if (res.ok) {
+          updateSiYuanStatus('✓ 连接成功 (版本: ' + result.version + ')');
+          showToast('思源连接成功', 'success');
         } else {
-          updateSiYuanStatus('✗ ' + (result.error || '连接失败'), true);
+          updateSiYuanStatus('✗ ' + (result.error?.message || '连接失败'), true);
         }
       } catch(e) {
         updateSiYuanStatus('✗ 连接失败', true);
