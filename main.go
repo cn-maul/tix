@@ -11,9 +11,11 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os/exec"
-	"runtime"
+	"os"
+	"path/filepath"
 	"strings"
+
+	_ "modernc.org/sqlite" // SQLite driver
 )
 
 //go:embed static
@@ -24,6 +26,17 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("❌ 加载配置失败: %v", err)
+	}
+
+	// 首次运行时保存默认配置
+	home, _ := os.UserHomeDir()
+	configPath := filepath.Join(home, ".tix", "config.yaml")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		if err := config.Save(cfg); err != nil {
+			log.Printf("⚠️ 无法保存默认配置: %v", err)
+		} else {
+			log.Printf("✓ 已创建默认配置: %s", configPath)
+		}
 	}
 
 	// 初始化数据库
@@ -38,7 +51,10 @@ func main() {
 	}
 
 	// 创建服务
-	svc := service.NewTicketService(db, cfg.Categories, cfg)
+	svc := service.NewTicketService(db)
+	aiSvc := service.NewAIService(&cfg.AI)
+	svc.SetAI(aiSvc)
+
 	h := handler.NewHandler(svc, cfg.Categories, cfg)
 
 	mux := http.NewServeMux()
@@ -70,9 +86,6 @@ func main() {
 	url := fmt.Sprintf("http://127.0.0.1:%d", actualPort)
 	printBanner(url, actualPort)
 
-	// 自动打开浏览器
-	go openBrowser(url)
-
 	// 启动服务
 	server := &http.Server{Handler: mux}
 	if err := server.Serve(listener); err != nil {
@@ -81,20 +94,18 @@ func main() {
 }
 
 func printBanner(url string, port int) {
-	// 计算终端显示宽度（中文占2，ASCII占1，其他符号占1）
 	displayWidth := func(s string) int {
 		width := 0
 		for _, r := range s {
 			if r >= 0x4E00 && r <= 0x9FFF {
-				width += 2 // CJK中文字符
+				width += 2
 			} else {
-				width += 1 // ASCII和其他符号
+				width += 1
 			}
 		}
 		return width
 	}
 
-	// 填充到指定宽度
 	pad := func(s string, totalWidth int) string {
 		currentWidth := displayWidth(s)
 		if currentWidth >= totalWidth {
@@ -103,10 +114,10 @@ func printBanner(url string, port int) {
 		return s + strings.Repeat(" ", totalWidth-currentWidth)
 	}
 
-	boxWidth := 48 // 内容区宽度
+	boxWidth := 48
 
 	lines := []string{
-		"  IT 工单管理系统 v1.0",
+		"  Tix v2.0 - 工单管理系统",
 		fmt.Sprintf("  状态: ✓ 运行中 (端口 %d)", port),
 		fmt.Sprintf("  地址: %s", url),
 		"  按 Ctrl+C 停止服务",
@@ -122,19 +133,4 @@ func printBanner(url string, port int) {
 	}
 	fmt.Println("╚" + strings.Repeat("═", boxWidth) + "╝")
 	fmt.Println()
-}
-
-func openBrowser(url string) {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "linux":
-		cmd = exec.Command("xdg-open", url)
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-	case "darwin":
-		cmd = exec.Command("open", url)
-	default:
-		return
-	}
-	cmd.Start()
 }

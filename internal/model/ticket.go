@@ -1,36 +1,55 @@
 package model
 
-import "time"
-
 type Ticket struct {
-	ID          string     `json:"id"`
-	Initiator   string     `json:"initiator"`
-	Category    string     `json:"category"`
-	Title       string     `json:"title"`
-	Content     string     `json:"content"`
-	Resolution  string     `json:"resolution"`
-	IsCompleted bool       `json:"is_completed"`
-	CreatedAt   string     `json:"created_at"`
-	CompletedAt *string    `json:"completed_at"`
+	ID          string  `json:"id"`
+	Initiator   string  `json:"initiator"`
+	Category    string  `json:"category"`
+	Title       string  `json:"title"`
+	Content     string  `json:"content"`
+	Resolution  string  `json:"resolution"`
+	IsCompleted bool    `json:"is_completed"`
+	CreatedAt   string  `json:"created_at"`
+	CompletedAt *string `json:"completed_at,omitempty"`
+	Priority    int     `json:"priority"`
+	Tags        string  `json:"tags"`
 }
+
+// 优先级常量
+const (
+	PriorityLow    = 1
+	PriorityNormal = 2
+	PriorityHigh   = 3
+	PriorityUrgent = 4
+)
 
 type CreateTicketReq struct {
 	Initiator string `json:"initiator"`
 	Category  string `json:"category"`
 	Content   string `json:"content"`
+	Priority  int    `json:"priority"`
+	Tags      string `json:"tags"`
 }
 
 type UpdateTicketReq struct {
 	Category    *string `json:"category"`
 	Resolution  *string `json:"resolution"`
 	IsCompleted *bool   `json:"is_completed"`
-	CreatedAt   *string `json:"created_at"`
 	CompletedAt *string `json:"completed_at"`
+	CreatedAt   *string `json:"created_at"`
+	Priority    *int    `json:"priority"`
+	Tags        *string `json:"tags"`
 }
 
-type TicketListResp struct {
-	Total int      `json:"total"`
-	Items []Ticket `json:"items"`
+type BatchUpdateReq struct {
+	IDs      []string        `json:"ids"`
+	Updates  map[string]any  `json:"updates"`
+}
+
+type ListResponse struct {
+	Items    []Ticket `json:"items"`
+	Total    int      `json:"total"`
+	Page     int      `json:"page"`
+	PageSize int      `json:"page_size"`
 }
 
 type ErrorResp struct {
@@ -42,26 +61,12 @@ type ErrorDetail struct {
 	Message string `json:"message"`
 }
 
-type CategoryResp struct {
-	Categories []string `json:"categories"`
-}
-
-func NewTicket(initiator, category, title, content string) *Ticket {
-	now := time.Now().Format(time.RFC3339)
-	return &Ticket{
-		ID:          generateUUID(),
-		Initiator:   initiator,
-		Category:    category,
-		Title:       title,
-		Content:     content,
-		Resolution:  "",
-		IsCompleted: false,
-		CreatedAt:   now,
-		CompletedAt: nil,
-	}
-}
-
-func generateUUID() string {
-	// 简单实现，实际用 google/uuid
-	return "temp"
+type StatsResponse struct {
+	Total       int                    `json:"total"`
+	Completed   int                    `json:"completed"`
+	Pending     int                    `json:"pending"`
+	Today       int                    `json:"today"`
+	ThisWeek    int                    `json:"this_week"`
+	ByCategory  []map[string]any       `json:"by_category"`
+	ByPriority  []map[string]any       `json:"by_priority"`
 }

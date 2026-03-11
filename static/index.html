@@ -86,6 +86,18 @@
               <option value="true">已完成</option>
             </select>
           </div>
+
+          <div>
+            <label class="block text-sm text-slate-500 dark:text-slate-400 mb-1">优先级</label>
+            <select id="priorityFilter" onchange="loadTickets()"
+                    class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:border-primary transition-colors text-sm">
+              <option value="">全部优先级</option>
+              <option value="1">低</option>
+              <option value="2">普通</option>
+              <option value="3">高</option>
+              <option value="4">紧急</option>
+            </select>
+          </div>
           
           <div>
             <label class="block text-sm text-slate-500 dark:text-slate-400 mb-1">开始日期</label>
@@ -146,10 +158,21 @@
         <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-2xl leading-none">&times;</button>
       </div>
       <div class="p-4 space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">发起人 *</label>
-          <input type="text" id="formInitiator" maxlength="50" 
-                 class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:border-primary bg-white dark:bg-slate-700 dark:text-slate-100 transition-colors">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">发起人 *</label>
+            <input type="text" id="formInitiator" maxlength="50"
+                   class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:border-primary bg-white dark:bg-slate-700 dark:text-slate-100 transition-colors">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">优先级</label>
+            <select id="formPriority" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:border-primary bg-white dark:bg-slate-700 dark:text-slate-100 transition-colors">
+              <option value="1">低</option>
+              <option value="2" selected>普通</option>
+              <option value="3">高</option>
+              <option value="4">紧急</option>
+            </select>
+          </div>
         </div>
         <div>
           <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">分类</label>
@@ -391,19 +414,22 @@
       const params = new URLSearchParams();
       params.set('limit', pageSize);
       params.set('offset', (currentPage - 1) * pageSize);
-      
+
       const search = document.getElementById('searchInput').value.trim();
-      if (search) params.set('initiator', search);
-      
+      if (search) params.set('search', search);
+
       const category = document.getElementById('categoryFilter').value;
       if (category) params.set('category', category);
-      
+
       const status = document.getElementById('statusFilter').value;
       if (status) params.set('completed', status);
-      
+
+      const priority = document.getElementById('priorityFilter').value;
+      if (priority) params.set('priority', priority);
+
       const startDate = document.getElementById('startDate').value;
       if (startDate) params.set('start_date', startDate);
-      
+
       const endDate = document.getElementById('endDate').value;
       if (endDate) params.set('end_date', endDate);
 
@@ -428,17 +454,22 @@
         return;
       }
 
-      container.innerHTML = tickets.map(t => `
-        <div class="ticket-item bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer ${selectedIds.has(t.id) ? 'selected' : ''}"
+      container.innerHTML = tickets.map(t => {
+        const priorityLabels = ['', '低', '普通', '高', '紧急'];
+        const priorityColors = ['', 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400', 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-300', 'bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-300', 'bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-300'];
+        const priority = t.priority || 2;
+        return `
+        <div class="ticket-item bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer priority-${priority} ${selectedIds.has(t.id) ? 'selected' : ''}"
              onclick="toggleSelect('${t.id}', event)">
           <div class="flex items-start gap-3 p-4">
-            <input type="checkbox" ${selectedIds.has(t.id) ? 'checked' : ''} 
+            <input type="checkbox" ${selectedIds.has(t.id) ? 'checked' : ''}
                    onclick="event.stopPropagation(); toggleSelect('${t.id}')"
                    class="mt-1 w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer">
             <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2 mb-1">
+              <div class="flex items-center gap-2 mb-1 flex-wrap">
                 <span class="font-medium text-slate-800 dark:text-slate-100">${escapeHtml(t.title || t.content.slice(0,20))}</span>
                 <span class="px-2 py-0.5 text-xs font-medium bg-blue-100 dark:bg-blue-900/50 text-primary dark:text-blue-300 rounded">${t.category}</span>
+                <span class="px-2 py-0.5 text-xs font-medium ${priorityColors[priority]} rounded">${priorityLabels[priority]}</span>
                 <span class="px-2 py-0.5 text-xs font-medium rounded ${t.is_completed ? 'bg-green-100 dark:bg-green-900/50 text-success dark:text-green-300' : 'bg-amber-100 dark:bg-amber-900/50 text-warning dark:text-amber-300'}">
                   ${t.is_completed ? '已完成' : '处理中'}
                 </span>
@@ -450,7 +481,7 @@
             </div>
           </div>
         </div>
-      `).join('');
+      `}).join('');
     }
 
     function toggleSelect(id, e) {
@@ -521,21 +552,21 @@
       editingId = Array.from(selectedIds)[0];
       const t = tickets.find(t => t.id === editingId);
       if (!t) return;
-      
+
       document.getElementById('modalTitle').textContent = '编辑工单';
       document.getElementById('formInitiator').value = t.initiator;
       document.getElementById('formCategory').value = t.category;
+      document.getElementById('formPriority').value = t.priority || 2;
       document.getElementById('formContent').value = t.content;
       document.getElementById('formResolution').value = t.resolution || '';
       document.getElementById('formCompleted').checked = t.is_completed;
-      
-      // 转换时间格式: 2026-03-11T10:30:00Z -> 2026-03-11T10:30:00
+
       const createdAt = t.created_at ? t.created_at.replace('Z', '').slice(0, 19) : '';
       document.getElementById('formCreatedAt').value = createdAt;
-      
+
       const completedAt = t.completed_at ? t.completed_at.replace('Z', '').slice(0, 19) : '';
       document.getElementById('formCompletedAt').value = completedAt;
-      
+
       document.getElementById('resolutionGroup').classList.remove('hidden');
       document.getElementById('completedGroup').classList.remove('hidden');
       document.getElementById('timeGroup').classList.remove('hidden');
@@ -573,29 +604,29 @@
 
     async function saveTicket() {
       const btn = document.getElementById('btnSaveTicket');
-      if (btn.disabled) return;  // 防止重复点击
-      
+      if (btn.disabled) return;
+
       const data = {
         initiator: document.getElementById('formInitiator').value.trim(),
         category: document.getElementById('formCategory').value,
-        content: document.getElementById('formContent').value.trim()
+        content: document.getElementById('formContent').value.trim(),
+        priority: parseInt(document.getElementById('formPriority').value) || 2
       };
       if (!data.initiator || !data.content) {
         showToast('请填写必填项', 'error');
         return;
       }
-      
-      // 禁用按钮，显示处理中
+
       btn.disabled = true;
       btn.textContent = '处理中...';
-      
+
       try {
         if (editingId) {
           data.resolution = document.getElementById('formResolution').value.trim();
           data.is_completed = document.getElementById('formCompleted').checked;
           const createdAtValue = document.getElementById('formCreatedAt').value;
           if (createdAtValue) {
-            data.created_at = createdAtValue + 'Z';  // 添加Z表示UTC
+            data.created_at = createdAtValue + 'Z';
           }
           const completedAtValue = document.getElementById('formCompletedAt').value;
           if (completedAtValue) {

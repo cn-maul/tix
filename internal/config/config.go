@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -123,24 +122,21 @@ func (c *Config) IsValidCategory(cat string) bool {
 
 // Save 保存配置到文件
 func Save(cfg *Config) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	configDir := filepath.Join(home, ".tix")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return err
+	}
+
+	configPath := filepath.Join(configDir, "config.yaml")
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return err
 	}
 
-	paths := []string{
-		"./config.yaml",
-		filepath.Join(os.Getenv("HOME"), ".tix", "config.yaml"),
-	}
-
-	// 找到第一个可写的路径
-	for _, path := range paths {
-		dir := filepath.Dir(path)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			continue
-		}
-		return os.WriteFile(path, data, 0644)
-	}
-
-	return fmt.Errorf("no writable config path found")
+	return os.WriteFile(configPath, data, 0644)
 }
