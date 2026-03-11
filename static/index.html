@@ -711,18 +711,21 @@
 
     function renderCategories(categories) {
       const container = document.getElementById('categoryList');
-      container.innerHTML = categories.map(cat => `
+      if (!categories || categories.length === 0) {
+        container.innerHTML = '<p class="text-slate-400 text-sm">暂无分类，请添加</p>';
+        return;
+      }
+      container.innerHTML = categories.map(cat => {
+        const name = typeof cat === 'string' ? cat : cat.name;
+        return `
         <div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-          <div class="flex items-center gap-3">
-            <span class="font-medium text-slate-800 dark:text-slate-200">${escapeHtml(cat.name)}</span>
-            <span class="text-xs text-slate-400">${cat.tickets} 条工单</span>
-          </div>
+          <span class="font-medium text-slate-800 dark:text-slate-200">${escapeHtml(name)}</span>
           <div class="flex gap-2">
-            <button onclick="editCategory('${escapeHtml(cat.name)}')" class="text-slate-500 hover:text-blue-500 text-sm">编辑</button>
-            <button onclick="deleteCategory('${escapeHtml(cat.name)}', ${cat.tickets})" class="text-slate-500 hover:text-red-500 text-sm">删除</button>
+            <button onclick="editCategory('${escapeHtml(name)}')" class="text-slate-500 hover:text-blue-500 text-sm">编辑</button>
+            <button onclick="deleteCategory('${escapeHtml(name)}')" class="text-slate-500 hover:text-red-500 text-sm">删除</button>
           </div>
         </div>
-      `).join('');
+      `}).join('');
     }
 
     async function addCategory() {
@@ -732,21 +735,21 @@
         showToast('请输入分类名称', 'error');
         return;
       }
-      
+
       try {
         const res = await fetch(`${API}/config/categories`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name })
         });
-        const result = await res.json();
-        if (result.success) {
+        if (res.ok) {
           showToast('添加成功', 'success');
           input.value = '';
           loadCategoriesConfig();
           loadCategories();
         } else {
-          showToast(result.message || '添加失败', 'error');
+          const result = await res.json();
+          showToast(result.error?.message || '添加失败', 'error');
         }
       } catch(e) {
         showToast('添加失败', 'error');
@@ -756,35 +759,28 @@
     async function editCategory(oldName) {
       const newName = prompt('新分类名称：', oldName);
       if (!newName || newName === oldName) return;
-      
+
       try {
         const res = await fetch(`${API}/config/categories/${encodeURIComponent(oldName)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ new_name: newName })
+          body: JSON.stringify({ name: newName })
         });
-        const result = await res.json();
-        if (result.success) {
+        if (res.ok) {
           showToast('修改成功', 'success');
           loadCategoriesConfig();
           loadCategories();
         } else {
-          showToast(result.message || '修改失败', 'error');
+          const result = await res.json();
+          showToast(result.error?.message || '修改失败', 'error');
         }
       } catch(e) {
         showToast('修改失败', 'error');
       }
     }
 
-    async function deleteCategory(name, ticketCount) {
-      if (ticketCount > 0) {
-        // 需要选择转移目标
-        const otherCategories = await getOtherCategories(name);
-        if (otherCategories.length === 0) {
-          showToast('没有其他分类可转移', 'error');
-          return;
-        }
-        
+    async function deleteCategory(name) {
+      if (!confirm(`确定删除分类"${name}"？`)) return;
         const transferTo = prompt(`该分类有 ${ticketCount} 条工单，请输入转移目标分类：\n可选：${otherCategories.join(', ')}`);
         if (!transferTo) return;
         
@@ -801,34 +797,24 @@
           } else {
             showToast(result.message || '删除失败', 'error');
           }
-        } catch(e) {
-          showToast('删除失败', 'error');
-        }
-      } else {
-        if (!confirm(`确定删除分类"${name}"？`)) return;
-        
-        try {
-          const res = await fetch(`${API}/config/categories/${encodeURIComponent(name)}`, {
-            method: 'DELETE'
-          });
-          const result = await res.json();
-          if (result.success) {
-            showToast('删除成功', 'success');
-            loadCategoriesConfig();
-            loadCategories();
-          } else {
-            showToast(result.message || '删除失败', 'error');
-          }
-        } catch(e) {
-          showToast('删除失败', 'error');
-        }
-      }
-    }
+    async function deleteCategory(name) {
+      if (!confirm(`确定删除分类"${name}"？`)) return;
 
-    async function getOtherCategories(exclude) {
-      const res = await fetch(`${API}/config/categories`);
-      const data = await res.json();
-      return data.filter(c => c.name !== exclude).map(c => c.name);
+      try {
+        const res = await fetch(`${API}/config/categories/${encodeURIComponent(name)}`, {
+          method: 'DELETE'
+        });
+        if (res.ok) {
+          showToast('删除成功', 'success');
+          loadCategoriesConfig();
+          loadCategories();
+        } else {
+          const result = await res.json();
+          showToast(result.error?.message || '删除失败', 'error');
+        }
+      } catch(e) {
+        showToast('删除失败', 'error');
+      }
     }
 
     async function loadAIConfig() {
