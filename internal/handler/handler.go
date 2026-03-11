@@ -498,10 +498,8 @@ func (h *Handler) TestAIConfig(w http.ResponseWriter, r *http.Request) {
 		BaseURL string `json:"base_url"`
 		Model   string `json:"model"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.error(w, 400, "INVALID_JSON", "Invalid JSON body")
-		return
-	}
+	// 允许空 body
+	json.NewDecoder(r.Body).Decode(&req)
 
 	// 使用实际传入值或配置值
 	apiKey := req.APIKey
