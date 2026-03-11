@@ -781,24 +781,6 @@
 
     async function deleteCategory(name) {
       if (!confirm(`确定删除分类"${name}"？`)) return;
-        const transferTo = prompt(`该分类有 ${ticketCount} 条工单，请输入转移目标分类：\n可选：${otherCategories.join(', ')}`);
-        if (!transferTo) return;
-        
-        try {
-          const res = await fetch(`${API}/config/categories/${encodeURIComponent(name)}?transfer_to=${encodeURIComponent(transferTo)}`, {
-            method: 'DELETE'
-          });
-          const result = await res.json();
-          if (result.success) {
-            showToast(`已删除并转移 ${ticketCount} 条工单`, 'success');
-            loadCategoriesConfig();
-            loadCategories();
-            loadTickets();
-          } else {
-            showToast(result.message || '删除失败', 'error');
-          }
-    async function deleteCategory(name) {
-      if (!confirm(`确定删除分类"${name}"？`)) return;
 
       try {
         const res = await fetch(`${API}/config/categories/${encodeURIComponent(name)}`, {
