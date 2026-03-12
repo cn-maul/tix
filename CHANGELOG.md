@@ -47,6 +47,11 @@
 - 使用 `innerHTML` 设置消息内容
 - 统一使用 `showToast` 函数
 
+**暗色模式**
+- 修复 s-picker 下拉菜单在暗色模式下显示白色背景的问题
+- 修复下拉菜单项文字在暗色模式下不可见的问题
+- 添加 `--md-sys-color-surface-container` CSS 变量支持
+
 ### 💄 界面优化
 
 **筛选面板**

@@ -16,6 +16,7 @@
       --md-sys-color-surface: #ffffff;
       --md-sys-color-on-surface: #1e293b;
       --md-sys-color-surface-variant: #f1f5f9;
+      --md-sys-color-surface-container: #f1f5f9;
       --md-sys-color-on-surface-variant: #475569;
       --md-sys-color-outline: #cbd5e1;
       --md-sys-color-success: #22c55e;
@@ -35,6 +36,7 @@
       --md-sys-color-surface: #1e293b;
       --md-sys-color-on-surface: #f1f5f9;
       --md-sys-color-surface-variant: #334155;
+      --md-sys-color-surface-container: #334155;
       --md-sys-color-on-surface-variant: #cbd5e1;
       --md-sys-color-outline: #475569;
       --md-sys-color-success: #4ade80;
@@ -157,6 +159,24 @@
       --s-color-primary: var(--md-sys-color-primary);
       --s-color-on-primary: var(--md-sys-color-on-primary);
       --s-color-outline: var(--md-sys-color-outline);
+      --s-color-surface-container: var(--md-sys-color-surface-container);
+      --s-color-on-surface-variant: var(--md-sys-color-on-surface-variant);
+    }
+
+    /* s-picker 下拉菜单暗色模式 */
+    :root.dark s-popup,
+    :root.dark s-picker s-popup,
+    :root.dark s-picker-popup,
+    :root.dark s-picker-item {
+      --s-color-surface-container: #334155;
+      --s-color-on-surface: #f1f5f9;
+      --s-color-on-surface-variant: #cbd5e1;
+      --s-color-surface: #334155;
+    }
+
+    /* 强制下拉菜单项文字颜色 */
+    :root.dark s-picker-item {
+      color: #f1f5f9 !important;
     }
 
     /* 筛选面板组件统一宽度 */
