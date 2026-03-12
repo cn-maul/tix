@@ -169,8 +169,6 @@ func (s *TicketService) TestAI(apiKey, baseURL, model string) (string, error) {
 }
 
 func (s *TicketService) SelectCategory(content string, categories []string) (string, error) {
-	if s.ai == nil {
-		return "", errors.New("AI not configured")
-	}
+	// 动态创建 AI 服务，使用最新配置
 	return s.ai.SelectCategoryFromList(content, categories)
 }

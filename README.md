@@ -1,96 +1,86 @@
 # Tix
 
-轻量级 IT 工单管理系统，单二进制部署，开箱即用。
+轻量级工单管理系统，Material You 设计风格。
 
-[![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go)](https://golang.org)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+## 功能特性
 
-## 特性
-
-- 🎯 **单文件部署** - 一个二进制文件，无需安装依赖
-- 🤖 **AI 辅助** - 自动生成标题、智能分类
-- 📊 **PDF 报告** - 一键导出月度工作报告
-- 📝 **思源集成** - 推送工单到思源笔记
-- 🌙 **深色模式** - 护眼主题切换
-- 💾 **数据导入导出** - JSON 格式备份迁移
-
-## 截图
-
-<!-- 可以添加截图 -->
+- 🎨 **Material You 设计** - 使用 Sober 组件库，现代简洁的界面
+- 🌙 **深色模式** - 支持亮色/暗色主题，跟随系统偏好
+- 🤖 **AI 智能** - 自动分类、自动生成标题
+- 📊 **PDF 报告** - 导出带图表的工作报告
+- 📝 **思源笔记** - 推送工单到思源笔记
+- 🔍 **多维筛选** - 分类、状态、优先级、日期范围
+- ✏️ **批量操作** - 批量标记完成、删除、修改分类
 
 ## 快速开始
 
-### 下载运行
+### 下载
+
+从 [Releases](https://github.com/cn-maul/tix/releases) 下载对应平台的可执行文件。
+
+### 运行
 
 ```bash
-# 下载
-git clone https://github.com/cn-maul/tix.git
-cd tix
-
-# 编译
-go build -o tix .
-
-# 运行
+# 直接运行
 ./tix
 
-# 访问
-浏览器打开 http://localhost:8080
+# 指定端口
+./tix -port 9000
 ```
 
-### 配置
+首次运行会自动创建 `config.yaml` 配置文件。
 
-首次运行自动生成 `config.yaml`：
+### 访问
+
+打开浏览器访问 http://127.0.0.1:8080
+
+## 配置
+
+配置文件 `config.yaml`：
 
 ```yaml
 server:
   port: 8080
+  host: 0.0.0.0
 
 categories:
-  - "硬件故障"
-  - "网络问题"
-  - "软件支持"
-  - "会议设备"
-```
+  - 硬件故障
+  - 软件支持
+  - 网络问题
 
-## 功能一览
+database:
+  filename: tickets.db
 
-| 功能 | 说明 |
-|------|------|
-| 工单管理 | 增删改查、批量操作 |
-| 分类筛选 | 自定义分类、智能筛选 |
-| AI 标题 | 自动生成简短标题 |
-| AI 分类 | 根据内容智能选择分类 |
-| PDF 导出 | 月度报告、统计图表 |
-| 数据备份 | JSON 导入导出 |
-| 思源推送 | 按月推送到思源笔记 |
-
-## AI 配置
-
-支持 OpenAI 标准 API（DeepSeek、通义千问、硅基流动等）：
-
-```yaml
 ai:
-  api_key: "sk-xxx"
-  base_url: "https://api.deepseek.com/v1"
-  model: "deepseek-chat"
-```
+  api_key: ""          # OpenAI 兼容 API Key
+  base_url: ""         # API 地址，默认 OpenAI
+  model: ""            # 模型名称
 
-## PDF 报告
+siyuan:
+  api_url: "http://127.0.0.1:6806"
+  notebook_id: ""      # 思源笔记本 ID
 
-导出月度工作报告，包含：
-- 统计概览（总数、完成率）
-- 分类分布图表
-- 每日工单趋势
-- 工单明细列表
-
-Windows 用户需配置字体路径：
-
-```yaml
 pdf:
-  font_path: "C:/Windows/Fonts/simhei.ttf"
+  font_path: ""        # 中文字体路径
 ```
 
-## API 接口
+## 构建
+
+需要 Go 1.21+：
+
+```bash
+git clone https://github.com/cn-maul/tix.git
+cd tix
+go build -o tix .
+```
+
+## 技术栈
+
+- **后端**: Go + SQLite
+- **前端**: Sober (Web Components) + Material You
+- **AI**: OpenAI 兼容 API
+
+## API
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -99,38 +89,15 @@ pdf:
 | GET | /v1/tickets/{id} | 工单详情 |
 | PATCH | /v1/tickets/{id} | 更新工单 |
 | DELETE | /v1/tickets/{id} | 删除工单 |
+| POST | /v1/tickets/batch-delete | 批量删除 |
+| POST | /v1/tickets/batch-update | 批量更新 |
 | GET | /v1/categories | 分类列表 |
-| GET | /v1/report | 导出 PDF 报告 |
+| GET | /v1/stats | 统计数据 |
 | GET | /v1/export | 导出 JSON |
-| POST | /v1/import | 导入 JSON |
+| GET | /v1/export/csv | 导出 CSV |
+| GET | /v1/report | 导出 PDF 报告 |
+| POST | /v1/push-siyuan | 推送思源 |
 
-## 技术栈
+## 许可证
 
-- **后端**: Go 1.26 + SQLite (纯 Go 实现)
-- **前端**: HTML/CSS/JS (嵌入二进制)
-- **PDF**: gopdf + go-charts (无外部依赖)
-
-## 项目结构
-
-```
-.
-├── main.go              # 入口
-├── static/              # 前端
-├── internal/
-│   ├── config/          # 配置
-│   ├── database/        # 数据库
-│   ├── handler/         # HTTP
-│   ├── model/           # 模型
-│   └── service/         # 业务
-├── LICENSE
-├── README.md
-└── CHANGELOG.md
-```
-
-## 更新日志
-
-见 [CHANGELOG.md](./CHANGELOG.md)
-
-## License
-
-[MIT](LICENSE)
+MIT License

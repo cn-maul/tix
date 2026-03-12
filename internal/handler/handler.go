@@ -123,13 +123,21 @@ func (h *Handler) CreateTicket(w http.ResponseWriter, r *http.Request) {
 			h.error(w, 400, "AI_NOT_CONFIGURED", "请先在设置中配置AI，或手动选择分类")
 			return
 		}
-		// AI选择分类
-		category, err := h.svc.SelectCategory(req.Content, h.cfg.Categories)
-		if err != nil {
-			log.Printf("AI分类失败: %v", err)
-			h.error(w, 500, "AI_ERROR", "AI分类失败，请手动选择分类")
+		// 动态创建 AI 服务，确保使用最新配置
+		aiSvc := service.NewAIService(&h.cfg.AI)
+		if aiSvc == nil {
+			h.error(w, 500, "AI_ERROR", "AI服务初始化失败")
 			return
 		}
+		// AI选择分类
+		log.Printf("AI分类请求: content=%s, categories=%v", req.Content[:min(50, len(req.Content))], h.cfg.Categories)
+		category, err := aiSvc.SelectCategoryFromList(req.Content, h.cfg.Categories)
+		if err != nil {
+			log.Printf("AI分类失败: %v", err)
+			h.error(w, 500, "AI_ERROR", fmt.Sprintf("AI分类失败: %v，请手动选择分类", err))
+			return
+		}
+		log.Printf("AI分类结果: %s", category)
 		req.Category = category
 	}
 
@@ -472,18 +480,31 @@ func (h *Handler) GetAIConfig(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) SaveAIConfig(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		APIKey  string `json:"api_key"`
-		BaseURL string `json:"base_url"`
-		Model   string `json:"model"`
+		APIKey  *string `json:"api_key"`
+		BaseURL *string `json:"base_url"`
+		Model   *string `json:"model"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.error(w, 400, "INVALID_JSON", "Invalid JSON body")
 		return
 	}
 
-	h.cfg.AI.APIKey = req.APIKey
-	h.cfg.AI.BaseURL = req.BaseURL
-	h.cfg.AI.Model = req.Model
+	// 使用指针区分"未发送"和"发送空字符串"
+	if req.APIKey != nil {
+		// 如果发送的是空字符串或 "CLEAR"，则清空配置
+		if *req.APIKey == "" || *req.APIKey == "CLEAR" {
+			h.cfg.AI.APIKey = ""
+		} else if !strings.Contains(*req.APIKey, "****") {
+			// 脱敏格式不更新
+			h.cfg.AI.APIKey = *req.APIKey
+		}
+	}
+	if req.BaseURL != nil {
+		h.cfg.AI.BaseURL = *req.BaseURL
+	}
+	if req.Model != nil {
+		h.cfg.AI.Model = *req.Model
+	}
 
 	if err := h.saveConfig(); err != nil {
 		h.error(w, 500, "SAVE_ERROR", "Failed to save config")
