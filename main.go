@@ -114,7 +114,7 @@ func printBanner(url string, port int) {
 	boxWidth := 48
 
 	lines := []string{
-		"  Tix v2.0 - 工单管理系统",
+		"  Tix v3.0.1 - 工单管理系统",
 		fmt.Sprintf("  状态: ✓ 运行中 (端口 %d)", port),
 		fmt.Sprintf("  地址: %s", url),
 		"  按 Ctrl+C 停止服务",
