@@ -510,6 +510,7 @@ func (h *Handler) ImportTickets(w http.ResponseWriter, r *http.Request) {
 		// 恢复配置
 		if len(exportData.Config.Categories) > 0 {
 			h.cfg.Categories = exportData.Config.Categories
+			h.categories = h.cfg.Categories // 同步更新
 			configImported = true
 		}
 		if exportData.Config.AI.APIKey != "" || exportData.Config.AI.Model != "" {
