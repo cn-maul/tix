@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Tix - 工单管理</title>
-  <script src="https://unpkg.com/sober/dist/sober.min.js"></script>
+  <script src="/sober.min.js"></script>
   <style>
     :root {
       --md-sys-color-primary: #475569;
@@ -103,6 +103,11 @@
 
     .icon-btn:hover {
       background-color: var(--md-sys-color-surface-variant);
+    }
+
+    .icon-btn.active {
+      background-color: var(--md-sys-color-primary-container);
+      color: var(--md-sys-color-on-primary-container);
     }
 
     /* 主内容区 */
@@ -780,6 +785,11 @@
         <p class="header-subtitle">共 <span id="totalCount">0</span> 条，<span id="pendingCount">0</span> 条待处理</p>
       </div>
       <div class="header-actions">
+        <button onclick="toggleSortOrder()" id="sortOrderBtn" class="icon-btn" title="切换排序">
+          <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"/>
+          </svg>
+        </button>
         <button onclick="toggleDark()" id="darkBtn" class="icon-btn" title="切换深色模式">
           <svg id="sunIcon" class="hidden dark:block" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
@@ -1084,6 +1094,24 @@
     let currentPage = 1;
     const pageSize = 20;
     let editingId = null;
+    let sortDesc = localStorage.getItem('sortDesc') !== 'false'; // 默认最新优先，从 localStorage 读取
+
+    // 切换排序
+    function toggleSortOrder() {
+      sortDesc = !sortDesc;
+      localStorage.setItem('sortDesc', sortDesc);
+      updateSortButton();
+      loadTickets();
+    }
+
+    // 更新排序按钮状态
+    function updateSortButton() {
+      const btn = document.getElementById('sortOrderBtn');
+      if (btn) {
+        btn.classList.toggle('active', !sortDesc);
+        btn.title = sortDesc ? '切换为最早优先' : '切换为最新优先';
+      }
+    }
 
     // 深色模式
     function toggleDark() {
@@ -1096,6 +1124,9 @@
         (!localStorage.getItem('dark') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
       document.documentElement.classList.add('dark');
     }
+
+    // 初始化排序按钮状态
+    updateSortButton();
 
     async function init() {
       // 为 s-picker 添加事件监听器，选中后更新 label 并刷新列表
@@ -1185,6 +1216,9 @@
 
       const endDate = getDateValue('endDate');
       if (endDate) params.set('end_date', endDate);
+
+      params.set('sort', 'created_at');
+      params.set('order', sortDesc ? 'desc' : 'asc');
 
       const res = await fetch(`${API}/tickets?${params}`);
       const data = await res.json();

@@ -394,8 +394,28 @@ func (h *Handler) ExportTickets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 导出时包含完整配置信息
+	exportData := map[string]interface{}{
+		"tickets": tickets,
+		"config": map[string]interface{}{
+			"categories": h.cfg.Categories,
+			"ai": map[string]string{
+				"api_key":  h.cfg.AI.APIKey,
+				"base_url": h.cfg.AI.BaseURL,
+				"model":    h.cfg.AI.Model,
+			},
+			"siyuan": map[string]string{
+				"api_url":     h.cfg.SiYuan.APIURL,
+				"notebook_id": h.cfg.SiYuan.NotebookID,
+			},
+			"pdf": map[string]string{
+				"font_path": h.cfg.PDF.FontPath,
+			},
+		},
+	}
+
 	w.Header().Set("Content-Disposition", "attachment; filename=tickets_export.json")
-	h.json(w, 200, tickets)
+	h.json(w, 200, exportData)
 }
 
 func (h *Handler) ExportCSV(w http.ResponseWriter, r *http.Request) {
@@ -440,10 +460,82 @@ func (h *Handler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ImportTickets(w http.ResponseWriter, r *http.Request) {
-	var tickets []model.Ticket
-	if err := json.NewDecoder(r.Body).Decode(&tickets); err != nil {
-		h.error(w, 400, "INVALID_JSON", "Invalid JSON body")
+	// 解析 multipart form (最大 10MB)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		h.error(w, 400, "INVALID_FORM", "Failed to parse form")
 		return
+	}
+
+	// 获取上传的文件
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		h.error(w, 400, "INVALID_FORM", "Missing file field")
+		return
+	}
+	defer file.Close()
+
+	// 解析 JSON - 支持两种格式
+	var fileContent bytes.Buffer
+	if _, err := fileContent.ReadFrom(file); err != nil {
+		h.error(w, 500, "READ_ERROR", "Failed to read file")
+		return
+	}
+
+	var tickets []model.Ticket
+	configImported := false
+
+	// 尝试解析新格式（包含 config）
+	var exportData struct {
+		Tickets []model.Ticket `json:"tickets"`
+		Config  struct {
+			Categories []string `json:"categories"`
+			AI         struct {
+				APIKey  string `json:"api_key"`
+				BaseURL string `json:"base_url"`
+				Model   string `json:"model"`
+			} `json:"ai"`
+			SiYuan struct {
+				APIURL     string `json:"api_url"`
+				NotebookID string `json:"notebook_id"`
+			} `json:"siyuan"`
+			PDF struct {
+				FontPath string `json:"font_path"`
+			} `json:"pdf"`
+		} `json:"config"`
+	}
+
+	if err := json.Unmarshal(fileContent.Bytes(), &exportData); err == nil && len(exportData.Tickets) > 0 {
+		// 新格式
+		tickets = exportData.Tickets
+		// 恢复配置
+		if len(exportData.Config.Categories) > 0 {
+			h.cfg.Categories = exportData.Config.Categories
+			configImported = true
+		}
+		if exportData.Config.AI.APIKey != "" || exportData.Config.AI.Model != "" {
+			h.cfg.AI.APIKey = exportData.Config.AI.APIKey
+			h.cfg.AI.BaseURL = exportData.Config.AI.BaseURL
+			h.cfg.AI.Model = exportData.Config.AI.Model
+			configImported = true
+		}
+		if exportData.Config.SiYuan.NotebookID != "" {
+			h.cfg.SiYuan.APIURL = exportData.Config.SiYuan.APIURL
+			h.cfg.SiYuan.NotebookID = exportData.Config.SiYuan.NotebookID
+			configImported = true
+		}
+		if exportData.Config.PDF.FontPath != "" {
+			h.cfg.PDF.FontPath = exportData.Config.PDF.FontPath
+			configImported = true
+		}
+		if configImported {
+			config.Save(h.cfg)
+		}
+	} else {
+		// 旧格式（只有工单数组）
+		if err := json.Unmarshal(fileContent.Bytes(), &tickets); err != nil {
+			h.error(w, 400, "INVALID_JSON", "Invalid JSON body")
+			return
+		}
 	}
 
 	imported, skipped, err := h.svc.Import(tickets)
@@ -452,10 +544,15 @@ func (h *Handler) ImportTickets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.json(w, 200, map[string]int{
+	result := map[string]interface{}{
 		"imported": imported,
 		"skipped":  skipped,
-	})
+	}
+	if configImported {
+		result["config_imported"] = true
+	}
+
+	h.json(w, 200, result)
 }
 
 // ==================== 配置 ====================
