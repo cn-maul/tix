@@ -91,23 +91,13 @@
       gap: 0.5rem;
     }
 
-    .icon-btn {
-      padding: 0.5rem;
-      border-radius: 0.75rem;
-      background: transparent;
-      border: none;
-      cursor: pointer;
+    .header-actions s-icon-button {
       color: var(--md-sys-color-on-surface-variant);
-      transition: background-color 0.2s;
     }
 
-    .icon-btn:hover {
-      background-color: var(--md-sys-color-surface-variant);
-    }
-
-    .icon-btn.active {
-      background-color: var(--md-sys-color-primary-container);
-      color: var(--md-sys-color-on-primary-container);
+    .header-actions s-icon-button.active {
+      --s-color-primary: var(--md-sys-color-primary-container);
+      --s-color-on-primary: var(--md-sys-color-on-primary-container);
     }
 
     /* 主内容区 */
@@ -121,7 +111,7 @@
 
     /* 左侧筛选面板 */
     .filter-panel {
-      width: 280px;
+      width: 296px;
       flex-shrink: 0;
       position: sticky;
       top: 1rem;
@@ -130,16 +120,40 @@
 
     .panel-card {
       background-color: var(--md-sys-color-surface);
-      border-radius: 0.75rem;
+      border-radius: 1rem;
       border: 1px solid var(--md-sys-color-outline);
       padding: 1rem;
+      box-shadow: 0 8px 28px rgba(15, 23, 42, 0.06);
+    }
+
+    .filter-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.875rem;
+      border-bottom: 1px solid var(--md-sys-color-outline);
     }
 
     .panel-title {
       font-size: 0.9375rem;
-      font-weight: 500;
+      font-weight: 600;
       color: var(--md-sys-color-on-surface);
-      margin-bottom: 1rem;
+      margin-bottom: 0.25rem;
+      letter-spacing: 0.01em;
+    }
+
+    .panel-subtitle {
+      font-size: 0.75rem;
+      color: var(--md-sys-color-on-surface-variant);
+      line-height: 1.4;
+    }
+
+    .filter-fields {
+      display: flex;
+      flex-direction: column;
+      gap: 0.125rem;
     }
 
     .form-group {
@@ -184,17 +198,36 @@
       color: #f1f5f9 !important;
     }
 
+    .filter-date-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+    }
+
+    .filter-date-row .form-group {
+      margin-bottom: 0.75rem;
+    }
+
     /* 筛选面板组件统一宽度 */
     .filter-panel s-text-field,
     .filter-panel s-picker,
     .filter-panel s-date-picker {
-      width: calc(100% - 16px);
-      margin: 0 8px;
+      width: 100%;
     }
 
     .filter-panel s-button {
-      width: calc(100% - 16px);
-      margin: 0 8px;
+      width: 100%;
+    }
+
+    .filter-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.625rem;
+      margin-top: 0.25rem;
+    }
+
+    :root.dark .panel-card {
+      box-shadow: 0 10px 24px rgba(2, 6, 23, 0.45);
     }
 
     /* 按钮样式优化 */
@@ -268,10 +301,13 @@
     .batch-actions {
       display: none;
       align-items: center;
-      gap: 0.75rem;
-      padding: 0.625rem 1rem;
-      background-color: var(--md-sys-color-primary-container);
-      border-radius: 1.5rem;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      padding: 0.55rem 0.65rem;
+      background-color: color-mix(in srgb, var(--md-sys-color-surface) 78%, var(--md-sys-color-primary-container));
+      border: 1px solid color-mix(in srgb, var(--md-sys-color-primary) 22%, var(--md-sys-color-outline));
+      border-radius: 0.95rem;
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
       animation: slideIn 0.2s ease;
     }
 
@@ -282,6 +318,34 @@
 
     .batch-actions.active {
       display: flex;
+    }
+
+    .batch-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--md-sys-color-on-surface-variant);
+      padding: 0 0.35rem 0 0.1rem;
+    }
+
+    .batch-actions s-chip {
+      --s-color-primary: var(--md-sys-color-primary-container);
+      --s-color-on-primary: var(--md-sys-color-on-primary-container);
+      font-weight: 600;
+    }
+
+    .batch-actions s-button {
+      min-width: 0;
+      --s-color-primary: color-mix(in srgb, var(--md-sys-color-surface) 70%, var(--md-sys-color-primary-container));
+      --s-color-on-primary: var(--md-sys-color-on-surface);
+    }
+
+    .batch-actions #btnDelete {
+      --s-color-primary: color-mix(in srgb, var(--md-sys-color-surface) 72%, #fee2e2);
+      --s-color-on-primary: #b91c1c;
+    }
+
+    :root.dark .batch-actions {
+      box-shadow: 0 10px 22px rgba(2, 6, 23, 0.45);
     }
 
     .selected-count {
@@ -300,7 +364,7 @@
     .tickets-list {
       display: flex;
       flex-direction: column;
-      gap: 0.75rem;
+      gap: 0.875rem;
     }
 
     .ticket-card {
@@ -308,25 +372,26 @@
       border-radius: 1rem;
       border: 1px solid var(--md-sys-color-outline);
       cursor: pointer;
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
       overflow: hidden;
     }
 
     .ticket-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+      transform: translateY(-1px);
+      border-color: color-mix(in srgb, var(--md-sys-color-primary) 28%, var(--md-sys-color-outline));
+      box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
     }
 
     .ticket-card.selected {
-      border-left: 4px solid var(--md-sys-color-primary);
+      border-left: 3px solid var(--md-sys-color-primary);
       background-color: var(--md-sys-color-primary-container);
     }
 
     .ticket-content {
       display: flex;
       align-items: flex-start;
-      gap: 1rem;
-      padding: 1rem 1.25rem;
+      gap: 0.875rem;
+      padding: 1rem 1rem 0.95rem 1.1rem;
     }
 
     .ticket-checkbox {
@@ -343,26 +408,34 @@
       align-items: center;
       gap: 0.625rem;
       flex-wrap: wrap;
-      margin-bottom: 0.5rem;
+      margin-bottom: 0.625rem;
     }
 
     .ticket-title {
       font-size: 1rem;
-      font-weight: 500;
+      font-weight: 600;
       color: var(--md-sys-color-on-surface);
+      line-height: 1.35;
+      max-width: min(44ch, 100%);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .ticket-badges {
       display: flex;
       gap: 0.375rem;
       flex-wrap: wrap;
+      margin-bottom: 0.5rem;
     }
 
     .ticket-badge {
-      padding: 0.25rem 0.625rem;
+      padding: 0.2rem 0.6rem;
       font-size: 0.75rem;
       font-weight: 500;
-      border-radius: 1rem;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      line-height: 1.25;
     }
 
     .badge-category {
@@ -373,6 +446,7 @@
     .badge-priority-1 {
       background-color: var(--md-sys-color-surface-variant);
       color: var(--md-sys-color-on-surface-variant);
+      border-color: color-mix(in srgb, var(--md-sys-color-outline) 85%, transparent);
     }
 
     .badge-priority-2 {
@@ -424,23 +498,27 @@
       font-size: 0.75rem;
       color: var(--md-sys-color-on-surface-variant);
       margin-left: auto;
+      padding-left: 0.5rem;
+      white-space: nowrap;
     }
 
     .ticket-text {
       font-size: 0.875rem;
       color: var(--md-sys-color-on-surface-variant);
-      white-space: nowrap;
+      line-height: 1.55;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
       overflow: hidden;
-      text-overflow: ellipsis;
     }
 
     .ticket-resolution {
-      font-size: 0.8125rem;
+      font-size: 0.8rem;
       color: var(--md-sys-color-success);
       background-color: rgba(34, 197, 94, 0.1);
-      padding: 0.25rem 0.5rem;
-      border-radius: 0.25rem;
-      margin-top: 0.5rem;
+      padding: 0.3rem 0.55rem;
+      border-radius: 0.45rem;
+      margin-top: 0.625rem;
     }
 
     .dark .ticket-resolution {
@@ -450,7 +528,7 @@
     .ticket-initiator {
       font-size: 0.75rem;
       color: var(--md-sys-color-on-surface-variant);
-      margin-top: 0.5rem;
+      margin-top: 0.625rem;
     }
 
     /* 分页 */
@@ -490,20 +568,22 @@
 
     .modal-content {
       background-color: var(--md-sys-color-surface);
-      border-radius: 0.75rem;
+      border-radius: 1rem;
       width: 100%;
-      max-width: 32rem;
+      max-width: 36rem;
       margin: 0 1rem;
       max-height: 90vh;
-      overflow-y: auto;
+      overflow: hidden;
+      box-shadow: 0 16px 42px rgba(15, 23, 42, 0.28);
     }
 
     .modal-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 1rem;
+      padding: 1rem 1.25rem;
       border-bottom: 1px solid var(--md-sys-color-outline);
+      background-color: color-mix(in srgb, var(--md-sys-color-surface) 90%, var(--md-sys-color-surface-variant));
     }
 
     .modal-title {
@@ -526,22 +606,25 @@
     }
 
     .modal-body {
-      padding: 1rem;
+      padding: 1.15rem 1.25rem;
+      max-height: calc(90vh - 132px);
+      overflow-y: auto;
     }
 
     .modal-footer {
       display: flex;
       justify-content: flex-end;
       gap: 0.5rem;
-      padding: 1rem;
+      padding: 0.9rem 1.25rem 1rem;
       border-top: 1px solid var(--md-sys-color-outline);
+      background-color: color-mix(in srgb, var(--md-sys-color-surface) 92%, var(--md-sys-color-surface-variant));
     }
 
     .form-row {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 0.75rem;
-      margin-bottom: 1rem;
+      gap: 0.875rem;
+      margin-bottom: 1.1rem;
     }
 
     .form-hint {
@@ -576,19 +659,21 @@
 
     /* 设置模态框 */
     .settings-modal {
-      max-width: 48rem;
+      max-width: 56rem;
+      min-height: min(78vh, 44rem);
       display: flex;
     }
 
     .settings-sidebar {
-      width: 10rem;
+      width: 12rem;
       border-right: 1px solid var(--md-sys-color-outline);
       display: flex;
       flex-direction: column;
+      background-color: var(--md-sys-color-surface-variant);
     }
 
     .settings-sidebar-header {
-      padding: 1rem;
+      padding: 1.25rem 1rem 1rem;
       border-bottom: 1px solid var(--md-sys-color-outline);
     }
 
@@ -608,24 +693,17 @@
 
     .settings-nav-btn {
       text-align: left;
-      padding: 0.625rem 1rem;
+      justify-content: flex-start;
+      width: 100%;
       font-size: 0.875rem;
       font-weight: 500;
-      border-radius: 0.5rem;
-      background: transparent;
-      border: none;
-      cursor: pointer;
       color: var(--md-sys-color-on-surface-variant);
-      transition: background-color 0.2s;
-    }
-
-    .settings-nav-btn:hover {
-      background-color: var(--md-sys-color-surface-variant);
     }
 
     .settings-nav-btn.active {
       color: var(--md-sys-color-primary);
-      background-color: var(--md-sys-color-primary-container);
+      --s-color-primary: var(--md-sys-color-primary-container);
+      --s-color-on-primary: var(--md-sys-color-primary);
     }
 
     .settings-sidebar-footer {
@@ -640,28 +718,56 @@
     }
 
     .settings-panel {
-      padding: 1.5rem;
+      padding: 1.5rem 1.75rem;
     }
 
     .settings-panel.hidden {
       display: none;
     }
 
+    .settings-panel-header {
+      margin-bottom: 1.25rem;
+    }
+
+    .settings-panel-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+      color: var(--md-sys-color-on-surface);
+      margin-bottom: 0.375rem;
+    }
+
     .settings-description {
       font-size: 0.875rem;
       color: var(--md-sys-color-on-surface-variant);
-      margin-bottom: 1.5rem;
+      margin-bottom: 0;
+    }
+
+    .settings-section {
+      margin-bottom: 1.25rem;
+    }
+
+    .form-label-note {
+      color: var(--md-sys-color-on-surface-variant);
+      font-weight: 400;
+      font-size: 0.75rem;
+    }
+
+    .required-mark {
+      color: var(--md-sys-color-danger);
     }
 
     .settings-actions {
       display: flex;
+      flex-wrap: wrap;
       gap: 0.75rem;
-      padding-top: 0.5rem;
+      padding-top: 0.25rem;
     }
 
     .settings-status {
       font-size: 0.75rem;
       color: var(--md-sys-color-on-surface-variant);
+      min-height: 1.125rem;
+      margin-top: 0.625rem;
     }
 
     .settings-status.error {
@@ -708,19 +814,18 @@
     }
 
     .category-action-btn {
+      min-width: auto;
       font-size: 0.8125rem;
-      color: var(--md-sys-color-on-surface-variant);
-      background: transparent;
-      border: none;
-      cursor: pointer;
+      --s-color-on-primary: var(--md-sys-color-on-surface-variant);
     }
 
-    .category-action-btn:hover {
-      color: var(--md-sys-color-primary);
+    .category-action-btn.danger {
+      --s-color-on-primary: var(--md-sys-color-danger);
     }
 
     .category-input-row {
       display: flex;
+      align-items: flex-end;
       gap: 0.5rem;
       margin-top: 1rem;
     }
@@ -729,10 +834,16 @@
       flex: 1;
     }
 
+    .category-input-row s-button {
+      flex-shrink: 0;
+    }
+
     .hint-list {
       font-size: 0.75rem;
       color: var(--md-sys-color-on-surface-variant);
       margin-bottom: 1rem;
+      line-height: 1.5;
+      padding-left: 1rem;
     }
 
     .hint-list li {
@@ -742,6 +853,12 @@
     .font-path-list {
       font-size: 0.75rem;
       color: var(--md-sys-color-on-surface-variant);
+      line-height: 1.5;
+      padding-left: 1rem;
+    }
+
+    .font-path-list li {
+      margin-bottom: 0.25rem;
     }
 
     .font-path-list strong {
@@ -759,6 +876,11 @@
         position: static;
       }
 
+      .filter-date-row {
+        grid-template-columns: 1fr;
+        gap: 0;
+      }
+
       .settings-modal {
         flex-direction: column;
       }
@@ -772,6 +894,59 @@
       .settings-nav {
         flex-direction: row;
         overflow-x: auto;
+        white-space: nowrap;
+      }
+
+      .settings-nav-btn {
+        width: auto;
+        flex-shrink: 0;
+      }
+
+      .settings-panel {
+        padding: 1.25rem;
+      }
+
+      .settings-actions {
+        flex-direction: column;
+      }
+
+      .settings-actions s-button {
+        width: 100%;
+      }
+
+      .batch-actions {
+        width: 100%;
+      }
+
+      .batch-label {
+        width: 100%;
+        padding: 0 0.1rem;
+      }
+
+      .ticket-content {
+        padding: 0.9rem;
+      }
+
+      .ticket-header {
+        align-items: flex-start;
+      }
+
+      .ticket-meta {
+        margin-left: 0;
+        padding-left: 0;
+        width: 100%;
+      }
+
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+
+      .modal-body {
+        padding: 1rem;
+      }
+
+      .modal-footer {
+        padding: 0.85rem 1rem 1rem;
       }
     }
   </style>
@@ -785,25 +960,25 @@
         <p class="header-subtitle">共 <span id="totalCount">0</span> 条，<span id="pendingCount">0</span> 条待处理</p>
       </div>
       <div class="header-actions">
-        <button onclick="toggleSortOrder()" id="sortOrderBtn" class="icon-btn" title="切换排序">
+        <s-icon-button onclick="toggleSortOrder()" id="sortOrderBtn" class="icon-btn" title="切换排序">
           <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"/>
           </svg>
-        </button>
-        <button onclick="toggleDark()" id="darkBtn" class="icon-btn" title="切换深色模式">
-          <svg id="sunIcon" class="hidden dark:block" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        </s-icon-button>
+        <s-icon-button onclick="toggleDark()" id="darkBtn" class="icon-btn" title="切换深色模式">
+          <svg id="sunIcon" class="hidden" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
           </svg>
-          <svg id="moonIcon" class="block dark:hidden" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg id="moonIcon" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
           </svg>
-        </button>
-        <button onclick="openSettingsModal()" class="icon-btn" title="设置">
+        </s-icon-button>
+        <s-icon-button onclick="openSettingsModal()" class="icon-btn" title="设置">
           <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
           </svg>
-        </button>
+        </s-icon-button>
       </div>
     </div>
   </header>
@@ -812,55 +987,65 @@
     <!-- 左侧筛选面板 -->
     <aside class="filter-panel">
       <div class="panel-card">
-        <h3 class="panel-title">筛选条件</h3>
-
-        <div class="form-group">
-          <label class="form-label">搜索发起人</label>
-          <s-text-field id="searchInput" placeholder="输入关键词..."></s-text-field>
+        <div class="filter-header">
+          <div>
+            <h3 class="panel-title">筛选条件</h3>
+            <p class="panel-subtitle">按关键词、状态与时间范围快速定位工单</p>
+          </div>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">分类</label>
-          <s-picker id="categoryFilter" label="全部分类">
-            <s-picker-item value="">全部分类</s-picker-item>
-          </s-picker>
-        </div>
+        <div class="filter-fields">
+          <div class="form-group">
+            <label class="form-label">搜索发起人</label>
+            <s-text-field id="searchInput" placeholder="输入关键词..."></s-text-field>
+          </div>
 
-        <div class="form-group">
-          <label class="form-label">状态</label>
-          <s-picker id="statusFilter" label="全部状态">
-            <s-picker-item value="">全部状态</s-picker-item>
-            <s-picker-item value="false">处理中</s-picker-item>
-            <s-picker-item value="true">已完成</s-picker-item>
-          </s-picker>
-        </div>
+          <div class="form-group">
+            <label class="form-label">分类</label>
+            <s-picker id="categoryFilter" label="全部分类">
+              <s-picker-item value="">全部分类</s-picker-item>
+            </s-picker>
+          </div>
 
-        <div class="form-group">
-          <label class="form-label">优先级</label>
-          <s-picker id="priorityFilter" label="全部优先级">
-            <s-picker-item value="">全部优先级</s-picker-item>
-            <s-picker-item value="1">低</s-picker-item>
-            <s-picker-item value="2">普通</s-picker-item>
-            <s-picker-item value="3">高</s-picker-item>
-            <s-picker-item value="4">紧急</s-picker-item>
-          </s-picker>
-        </div>
+          <div class="form-group">
+            <label class="form-label">状态</label>
+            <s-picker id="statusFilter" label="全部状态">
+              <s-picker-item value="">全部状态</s-picker-item>
+              <s-picker-item value="false">处理中</s-picker-item>
+              <s-picker-item value="true">已完成</s-picker-item>
+            </s-picker>
+          </div>
 
-        <div class="form-group">
-          <label class="form-label">开始日期</label>
-          <s-date-picker id="startDate" label="选择开始日期"></s-date-picker>
-        </div>
+          <div class="form-group">
+            <label class="form-label">优先级</label>
+            <s-picker id="priorityFilter" label="全部优先级">
+              <s-picker-item value="">全部优先级</s-picker-item>
+              <s-picker-item value="1">低</s-picker-item>
+              <s-picker-item value="2">普通</s-picker-item>
+              <s-picker-item value="3">高</s-picker-item>
+              <s-picker-item value="4">紧急</s-picker-item>
+            </s-picker>
+          </div>
 
-        <div class="form-group">
-          <label class="form-label">结束日期</label>
-          <s-date-picker id="endDate" label="选择结束日期"></s-date-picker>
-        </div>
+          <div class="filter-date-row">
+            <div class="form-group">
+              <label class="form-label">开始日期</label>
+              <s-date-picker id="startDate" label="开始"></s-date-picker>
+            </div>
 
-        <s-button onclick="clearFilters()" type="outlined">清除筛选</s-button>
+            <div class="form-group">
+              <label class="form-label">结束日期</label>
+              <s-date-picker id="endDate" label="结束"></s-date-picker>
+            </div>
+          </div>
+        </div>
 
         <hr class="divider">
 
-        <s-button onclick="exportReport()" type="filled-tonal">导出 PDF 报告</s-button>
+        <div class="filter-actions">
+          <s-button onclick="exportReport()" type="filled-tonal">导出 PDF 报告</s-button>
+          <s-button onclick="clearFilters()" type="outlined">清除筛选</s-button>
+        </div>
       </div>
     </aside>
 
@@ -872,6 +1057,7 @@
           <s-button onclick="openCreateModal()" type="filled">新建工单</s-button>
 
           <div id="batchActions" class="batch-actions">
+            <span class="batch-label">批量操作</span>
             <s-chip id="selectedCount">已选 0 项</s-chip>
             <s-button onclick="batchComplete()" id="btnComplete" type="filled-tonal" size="small">完成</s-button>
             <s-button onclick="openEditModal()" id="btnEdit" type="filled-tonal" size="small">编辑</s-button>
@@ -893,13 +1079,15 @@
     <div class="modal-content">
       <div class="modal-header">
         <h2 id="modalTitle" class="modal-title">新建工单</h2>
-        <button onclick="closeModal()" class="modal-close">&times;</button>
+        <s-icon-button onclick="closeModal()" class="modal-close" title="关闭弹窗">
+          <span aria-hidden="true">&times;</span>
+        </s-icon-button>
       </div>
       <div class="modal-body">
         <div class="form-row">
           <div>
             <label class="form-label">发起人 *</label>
-            <s-text-field id="formInitiator" maxlength="50"></s-text-field>
+            <s-text-field id="formInitiator" max-length="50"></s-text-field>
           </div>
           <div>
             <label class="form-label">优先级</label>
@@ -920,11 +1108,11 @@
         </div>
         <div class="form-group">
           <label class="form-label">问题描述 *</label>
-          <s-text-field id="formContent" maxlength="2000" multiline rows="3"></s-text-field>
+          <s-text-field id="formContent" max-length="2000" type="multiline"></s-text-field>
         </div>
         <div id="resolutionGroup" class="form-group hidden">
           <label class="form-label">解决过程</label>
-          <s-text-field id="formResolution" maxlength="2000" multiline rows="2"></s-text-field>
+          <s-text-field id="formResolution" max-length="2000" type="multiline"></s-text-field>
         </div>
         <div id="completedGroup" class="form-group hidden">
           <s-checkbox id="formCompleted">标记为已完成</s-checkbox>
@@ -956,21 +1144,21 @@
           <h3 class="settings-sidebar-title">设置</h3>
         </div>
         <nav class="settings-nav">
-          <button onclick="switchSettingsTab('ai')" id="tab-ai" class="settings-nav-btn active">
+          <s-button onclick="switchSettingsTab('ai')" id="tab-ai" class="settings-nav-btn active" type="text">
             AI 配置
-          </button>
-          <button onclick="switchSettingsTab('category')" id="tab-category" class="settings-nav-btn">
+          </s-button>
+          <s-button onclick="switchSettingsTab('category')" id="tab-category" class="settings-nav-btn" type="text">
             分类管理
-          </button>
-          <button onclick="switchSettingsTab('data')" id="tab-data" class="settings-nav-btn">
+          </s-button>
+          <s-button onclick="switchSettingsTab('data')" id="tab-data" class="settings-nav-btn" type="text">
             数据管理
-          </button>
-          <button onclick="switchSettingsTab('siyuan')" id="tab-siyuan" class="settings-nav-btn">
+          </s-button>
+          <s-button onclick="switchSettingsTab('siyuan')" id="tab-siyuan" class="settings-nav-btn" type="text">
             思源笔记
-          </button>
-          <button onclick="switchSettingsTab('pdf')" id="tab-pdf" class="settings-nav-btn">
+          </s-button>
+          <s-button onclick="switchSettingsTab('pdf')" id="tab-pdf" class="settings-nav-btn" type="text">
             PDF 设置
-          </button>
+          </s-button>
         </nav>
         <div class="settings-sidebar-footer">
           <s-button onclick="closeSettingsModal()" type="text">关闭</s-button>
@@ -981,20 +1169,25 @@
       <div class="settings-content">
         <!-- AI 配置 -->
         <div id="panel-ai" class="settings-panel">
-          <p class="settings-description">配置 AI 自动生成标题和选择分类</p>
-          <div class="form-group">
-            <label class="form-label">API 密钥 <span style="color: var(--md-sys-color-danger)">*</span></label>
-            <s-text-field type="password" id="aiApiKey" placeholder="sk-xxxxxxxx"></s-text-field>
+          <div class="settings-panel-header">
+            <h4 class="settings-panel-title">AI 配置</h4>
+            <p class="settings-description">用于自动生成标题和自动分类。</p>
           </div>
-          <div class="form-group">
-            <label class="form-label">API 地址 <span class="text-slate-400 font-normal">(OpenAI 标准)</span></label>
-            <s-text-field id="aiBaseUrl" placeholder="https://api.openai.com/v1"></s-text-field>
+          <div class="settings-section">
+            <div class="form-group">
+              <label class="form-label">API 密钥 <span class="required-mark">*</span></label>
+              <s-text-field type="password" id="aiApiKey" placeholder="sk-xxxxxxxx"></s-text-field>
+            </div>
+            <div class="form-group">
+              <label class="form-label">API 地址 <span class="form-label-note">(OpenAI 标准)</span></label>
+              <s-text-field id="aiBaseUrl" placeholder="https://api.openai.com/v1"></s-text-field>
+            </div>
+            <div class="form-group">
+              <label class="form-label">模型名称</label>
+              <s-text-field id="aiModel" placeholder="gpt-3.5-turbo"></s-text-field>
+            </div>
+            <p class="form-hint">支持 OpenAI 标准 API（如 DeepSeek、通义千问等）。</p>
           </div>
-          <div class="form-group">
-            <label class="form-label">模型名称</label>
-            <s-text-field id="aiModel" placeholder="gpt-3.5-turbo"></s-text-field>
-          </div>
-          <p class="form-hint">支持 OpenAI 标准 API（如 DeepSeek、通义千问等）</p>
           <div class="settings-actions">
             <s-button onclick="saveAIConfig()" type="filled">保存配置</s-button>
             <s-button onclick="testAIConfig()" type="filled-tonal">测试连接</s-button>
@@ -1004,17 +1197,25 @@
 
         <!-- 分类管理 -->
         <div id="panel-category" class="settings-panel hidden">
-          <p class="settings-description">管理工单分类</p>
-          <div id="categoryList" class="form-group"></div>
-          <div class="category-input-row">
-            <s-text-field id="newCategoryName" placeholder="新分类名称" class="category-input"></s-text-field>
-            <s-button onclick="addCategory()" type="filled">添加</s-button>
+          <div class="settings-panel-header">
+            <h4 class="settings-panel-title">分类管理</h4>
+            <p class="settings-description">新增、编辑或删除工单分类。</p>
+          </div>
+          <div class="settings-section">
+            <div id="categoryList" class="form-group"></div>
+            <div class="category-input-row">
+              <s-text-field id="newCategoryName" placeholder="新分类名称" class="category-input"></s-text-field>
+              <s-button onclick="addCategory()" type="filled">添加</s-button>
+            </div>
           </div>
         </div>
 
         <!-- 数据管理 -->
         <div id="panel-data" class="settings-panel hidden">
-          <p class="settings-description">导入导出工单数据</p>
+          <div class="settings-panel-header">
+            <h4 class="settings-panel-title">数据管理</h4>
+            <p class="settings-description">导入导出工单数据，便于备份与迁移。</p>
+          </div>
           <div class="info-card">
             <h4 class="info-card-title">导出数据</h4>
             <p class="info-card-desc">将所有工单导出为 JSON 文件，可用于备份或迁移</p>
@@ -1030,15 +1231,20 @@
 
         <!-- 思源笔记 -->
         <div id="panel-siyuan" class="settings-panel hidden">
-          <p class="settings-description">推送工单记录到思源笔记</p>
-          <div class="form-group">
-            <label class="form-label">API 地址</label>
-            <s-text-field id="siyuanApiUrl" placeholder="http://127.0.0.1:6806"></s-text-field>
+          <div class="settings-panel-header">
+            <h4 class="settings-panel-title">思源笔记</h4>
+            <p class="settings-description">将工单按月份推送到思源笔记文档。</p>
           </div>
-          <div class="form-group">
-            <label class="form-label">笔记本 ID <span style="color: var(--md-sys-color-danger)">*</span></label>
-            <s-text-field id="siyuanNotebookId" placeholder="20260310103508-n8dfouf"></s-text-field>
-            <p class="form-hint">在思源笔记中右键笔记本 → 复制 ID</p>
+          <div class="settings-section">
+            <div class="form-group">
+              <label class="form-label">API 地址</label>
+              <s-text-field id="siyuanApiUrl" placeholder="http://127.0.0.1:6806"></s-text-field>
+            </div>
+            <div class="form-group">
+              <label class="form-label">笔记本 ID <span class="required-mark">*</span></label>
+              <s-text-field id="siyuanNotebookId" placeholder="20260310103508-n8dfouf"></s-text-field>
+              <p class="form-hint">在思源笔记中右键笔记本，然后复制 ID。</p>
+            </div>
           </div>
           <div class="settings-actions">
             <s-button onclick="saveSiYuanConfig()" type="filled">保存配置</s-button>
@@ -1050,9 +1256,9 @@
             <h4 class="info-card-title">推送到思源</h4>
             <p class="info-card-desc">按月份分组生成报告文档，文件名格式如"2026 年 3 月"</p>
             <ul class="hint-list">
-              <li>• 确保思源笔记已启动</li>
-              <li>• 推送会覆盖同名文档</li>
-              <li>• 仅用于展示和报告，无法反向导入</li>
+              <li>确保思源笔记已启动</li>
+              <li>推送会覆盖同名文档</li>
+              <li>仅用于展示和报告，无法反向导入</li>
             </ul>
             <s-button onclick="pushToSiyuan()" id="btnPushSiyuan" type="filled" >推送到思源</s-button>
           </div>
@@ -1060,11 +1266,16 @@
 
         <!-- PDF 设置 -->
         <div id="panel-pdf" class="settings-panel hidden">
-          <p class="settings-description">配置 PDF 报告导出的字体</p>
-          <div class="form-group">
-            <label class="form-label">字体文件路径</label>
-            <s-text-field id="pdfFontPath" placeholder="例如：C:/Windows/Fonts/msyh.ttc"></s-text-field>
-            <p class="form-hint" id="pdfFontHint">支持 TTF 和 TTC 格式的中文字体</p>
+          <div class="settings-panel-header">
+            <h4 class="settings-panel-title">PDF 设置</h4>
+            <p class="settings-description">配置 PDF 报告导出的字体路径。</p>
+          </div>
+          <div class="settings-section">
+            <div class="form-group">
+              <label class="form-label">字体文件路径</label>
+              <s-text-field id="pdfFontPath" placeholder="例如：C:/Windows/Fonts/msyh.ttc"></s-text-field>
+              <p class="form-hint" id="pdfFontHint">支持 TTF 和 TTC 格式的中文字体</p>
+            </div>
           </div>
           <div class="settings-actions">
             <s-button onclick="savePDFConfig()" type="filled">保存配置</s-button>
@@ -1114,9 +1325,18 @@
     }
 
     // 深色模式
+    function updateThemeIcons() {
+      const isDark = document.documentElement.classList.contains('dark');
+      const sun = document.getElementById('sunIcon');
+      const moon = document.getElementById('moonIcon');
+      if (sun) sun.classList.toggle('hidden', !isDark);
+      if (moon) moon.classList.toggle('hidden', isDark);
+    }
+
     function toggleDark() {
       document.documentElement.classList.toggle('dark');
       localStorage.setItem('dark', document.documentElement.classList.contains('dark'));
+      updateThemeIcons();
     }
 
     // 初始化深色模式
@@ -1124,21 +1344,17 @@
         (!localStorage.getItem('dark') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
       document.documentElement.classList.add('dark');
     }
+    updateThemeIcons();
 
     // 初始化排序按钮状态
     updateSortButton();
 
     async function init() {
-      // 为 s-picker 添加事件监听器，选中后更新 label 并刷新列表
+      // 为筛选器添加事件监听器，变化后刷新列表
       ['categoryFilter', 'statusFilter', 'priorityFilter'].forEach(id => {
         const picker = document.getElementById(id);
         if (picker) {
           picker.addEventListener('change', () => {
-            // 更新 label 为选中项文本
-            const selected = picker.querySelector('s-picker-item[selected]');
-            if (selected) {
-              picker.label = selected.textContent;
-            }
             currentPage = 1;
             loadTickets();
           });
@@ -1253,7 +1469,7 @@
         <div class="ticket-card ${isSelected ? 'selected' : ''}"
              data-id="${t.id}">
           <div class="ticket-content">
-            <s-checkbox ${isSelected ? 'checked="true"' : ''} data-id="${t.id}"
+            <s-checkbox ${isSelected ? 'checked' : ''} data-id="${t.id}"
                    class="ticket-checkbox"></s-checkbox>
             <div class="ticket-body">
               <div class="ticket-header">
@@ -1311,10 +1527,8 @@
       div.classList.add('active');
       document.getElementById('selectedCount').textContent = `已选 ${count} 项`;
       document.getElementById('btnEdit').disabled = count > 1;
-      document.getElementById('btnEdit').style.opacity = count > 1 ? '0.5' : '1';
       const allCompleted = Array.from(selectedIds).every(id => tickets.find(t => t.id === id)?.is_completed);
       document.getElementById('btnComplete').disabled = allCompleted;
-      document.getElementById('btnComplete').style.opacity = allCompleted ? '0.5' : '1';
     }
 
     async function batchComplete() {
@@ -1351,16 +1565,10 @@
       document.getElementById('formResolution').value = '';
       
       // 设置分类默认值（第一个选项 "AI 自动选择"）
-      const categoryPicker = document.getElementById('formCategory');
-      categoryPicker.querySelectorAll('s-picker-item').forEach((item, i) => {
-        item.selected = (i === 0);
-      });
+      setPickerValue('formCategory', '');
       
       // 设置优先级默认值（普通）
-      const priorityPicker = document.getElementById('formPriority');
-      priorityPicker.querySelectorAll('s-picker-item').forEach((item, i) => {
-        item.selected = (i === 1); // index 1 = "普通"
-      });
+      setPickerValue('formPriority', '2');
       
       document.getElementById('resolutionGroup').classList.add('hidden');
       document.getElementById('completedGroup').classList.add('hidden');
@@ -1381,17 +1589,10 @@
       document.getElementById('formInitiator').value = t.initiator;
       
       // 设置分类选择器
-      const categoryPicker = document.getElementById('formCategory');
-      categoryPicker.querySelectorAll('s-picker-item').forEach(item => {
-        item.selected = (item.getAttribute('value') === t.category);
-      });
+      setPickerValue('formCategory', t.category || '');
       
       // 设置优先级选择器
-      const priorityPicker = document.getElementById('formPriority');
-      const priorityVal = String(t.priority || 2);
-      priorityPicker.querySelectorAll('s-picker-item').forEach(item => {
-        item.selected = (item.getAttribute('value') === priorityVal);
-      });
+      setPickerValue('formPriority', String(t.priority || 2));
       
       document.getElementById('formContent').value = t.content;
       document.getElementById('formResolution').value = t.resolution || '';
@@ -1448,7 +1649,7 @@
         initiator: document.getElementById('formInitiator').value.trim(),
         category: getPickerValue('formCategory'),
         content: document.getElementById('formContent').value.trim(),
-        priority: parseInt(document.getElementById('formPriority').value) || 2
+        priority: parseInt(getPickerValue('formPriority'), 10) || 2
       };
       if (!data.initiator || !data.content) {
         showToast('请填写必填项', 'error');
@@ -1552,8 +1753,8 @@
         <div class="category-item">
           <span class="category-item-name">${escapeHtml(name)}</span>
           <div class="category-actions">
-            <button onclick="editCategory('${escapeHtml(name)}')" class="category-action-btn">编辑</button>
-            <button onclick="deleteCategory('${escapeHtml(name)}')" class="category-action-btn">删除</button>
+            <s-button onclick="editCategory(decodeURIComponent('${encodeURIComponent(name)}'))" class="category-action-btn" type="text" size="small">编辑</s-button>
+            <s-button onclick="deleteCategory(decodeURIComponent('${encodeURIComponent(name)}'))" class="category-action-btn danger" type="text" size="small">删除</s-button>
           </div>
         </div>
       `}).join('');
@@ -1919,20 +2120,10 @@
       if (endDatePicker) endDatePicker.value = '';
       
       // 重置所有筛选选择器到第一个选项并更新 label
-      const defaultLabels = {
-        'categoryFilter': '全部分类',
-        'statusFilter': '全部状态',
-        'priorityFilter': '全部优先级'
-      };
-      
-      Object.entries(defaultLabels).forEach(([id, defaultLabel]) => {
-        const picker = document.getElementById(id);
-        if (picker) {
-          picker.querySelectorAll('s-picker-item').forEach((item, i) => {
-            item.selected = (i === 0);
-          });
-          picker.label = defaultLabel;
-        }
+      const filterPickerIds = ['categoryFilter', 'statusFilter', 'priorityFilter'];
+
+      filterPickerIds.forEach(id => {
+        setPickerValue(id, '');
       });
       
       currentPage = 1;
@@ -1943,17 +2134,27 @@
     function getPickerValue(id) {
       const picker = document.getElementById(id);
       if (!picker) return '';
-      // 尝试直接获取 value
-      if (picker.value) return picker.value;
-      // 从 selectedIndex 获取
-      if (picker.selectedIndex >= 0 && picker.options) {
-        const opt = picker.options[picker.selectedIndex];
-        if (opt && opt.value) return opt.value;
-      }
+      if (picker.value !== undefined && picker.value !== null) return String(picker.value);
       // 从选中的 item 获取
       const selected = picker.querySelector('s-picker-item[selected]');
       if (selected) return selected.getAttribute('value') || '';
       return '';
+    }
+
+    function setPickerValue(id, value) {
+      const picker = document.getElementById(id);
+      if (!picker) return;
+      picker.value = value;
+      let matched = false;
+      picker.querySelectorAll('s-picker-item').forEach(item => {
+        const selected = (item.getAttribute('value') || '') === value;
+        item.selected = selected;
+        matched = matched || selected;
+      });
+      if (!matched) {
+        const first = picker.querySelector('s-picker-item');
+        if (first) first.selected = true;
+      }
     }
 
     // 获取输入框值（兼容 Web Components）
@@ -1974,7 +2175,7 @@
 
     function showToast(msg, type = '') {
       const toast = document.getElementById('toast');
-      toast.innerHTML = msg;
+      toast.textContent = msg;
       if (type === 'success') {
         toast.setAttribute('type', 'success');
       } else if (type === 'error') {
