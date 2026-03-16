@@ -75,7 +75,17 @@ pdf:
 ```bash
 git clone https://github.com/cn-maul/tix.git
 cd tix
-go build -o tix .
+CGO_ENABLED=0 go build -ldflags="-s -w" -o tix .
+```
+
+## Docker
+
+```bash
+# 构建镜像
+docker build -t tix:latest .
+
+# 运行容器
+docker run -d -p 8080:8080 -v ~/tix-data:/data --name tix tix:latest
 ```
 
 ## 技术栈
