@@ -1,15 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"fmt"
 	"io/fs"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"strings"
+	"time"
 	"tix/internal/config"
 	"tix/internal/database"
 	"tix/internal/handler"
@@ -54,14 +58,14 @@ func main() {
 	aiSvc := service.NewAIService(&cfg.AI, nil)
 	svc.SetAI(aiSvc)
 
-	h := handler.NewHandler(svc, cfg.Categories, cfg)
+	h := handler.NewHandler(db, svc, cfg.Categories, cfg)
 
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
 	// 静态文件服务
 	staticContent, _ := fs.Sub(staticFS, "static")
-	mux.Handle("/", http.FileServer(http.FS(staticContent)))
+	registerStaticRoutes(mux, staticContent)
 
 	// 端口自适应
 	actualPort := cfg.Server.Port
@@ -87,10 +91,46 @@ func main() {
 
 	// 启动服务
 	server := &http.Server{
-		Handler: middleware.Chain(mux, middleware.Recover, middleware.Logger, middleware.CORS),
+		Handler: middleware.Chain(mux, middleware.Recover, middleware.Logger, middleware.CORS, middleware.Auth(db)),
 	}
 	if err := server.Serve(listener); err != nil {
 		log.Fatalf("❌ 服务错误: %v", err)
+	}
+}
+
+func registerStaticRoutes(mux *http.ServeMux, staticContent fs.FS) {
+	fileServer := http.FileServer(http.FS(staticContent))
+	indexHandler := serveStaticFile(staticContent, "index.html")
+	loginHandler := serveStaticFile(staticContent, "login.html")
+	publicHandler := serveStaticFile(staticContent, "public.html")
+
+	mux.HandleFunc("/{$}", indexHandler)
+	mux.HandleFunc("/index.html", indexHandler)
+	mux.HandleFunc("/login.html", loginHandler)
+	mux.HandleFunc("/public.html", publicHandler)
+	mux.Handle("/public", http.RedirectHandler("/public.html", http.StatusTemporaryRedirect))
+	mux.Handle("/", fileServer)
+}
+
+func serveStaticFile(staticContent fs.FS, name string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		data, err := fs.ReadFile(staticContent, name)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		if contentType := mime.TypeByExtension(path.Ext(name)); contentType != "" {
+			w.Header().Set("Content-Type", contentType)
+		}
+
+		if path.Ext(name) == ".html" {
+			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+		}
+
+		http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))
 	}
 }
 
@@ -118,7 +158,7 @@ func printBanner(url string, port int) {
 	boxWidth := 48
 
 	lines := []string{
-		"  Tix v3.0.3 - 工单管理系统",
+		"  Tix v3.1.0 - 工单管理系统",
 		fmt.Sprintf("  状态: ✓ 运行中 (端口 %d)", port),
 		fmt.Sprintf("  地址: %s", url),
 		"  按 Ctrl+C 停止服务",

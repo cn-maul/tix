@@ -3,6 +3,11 @@ tix
 tix-static
 tix.exe
 
+# Build artifacts
+dist/
+/dist/
+/build/
+
 # Data
 *.db
 *.db-journal

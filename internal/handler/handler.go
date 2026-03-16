@@ -26,29 +26,48 @@ import (
 )
 
 type Handler struct {
+	db         *database.DB
 	svc        *service.TicketService
 	categories []string
 	cfg        *config.Config
 	httpClient *http.Client
 	mu         sync.RWMutex
+	smsMu      sync.RWMutex
+	smsCodes   map[string]string
 }
 
-func NewHandler(svc *service.TicketService, categories []string, cfg *config.Config) *Handler {
+func NewHandler(db *database.DB, svc *service.TicketService, categories []string, cfg *config.Config) *Handler {
 	return &Handler{
+		db:         db,
 		svc:        svc,
 		categories: slices.Clone(categories),
 		cfg:        cfg,
 		httpClient: &http.Client{Timeout: 15 * time.Second},
+		smsCodes:   make(map[string]string),
 	}
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
+	// 认证
+	mux.HandleFunc("GET /v1/auth/bootstrap-status", h.BootstrapStatus)
+	mux.HandleFunc("POST /v1/auth/register", h.Register)
+	mux.HandleFunc("POST /v1/auth/login", h.Login)
+	mux.HandleFunc("GET /v1/auth/me", h.Me)
+	mux.HandleFunc("POST /v1/auth/logout", h.Logout)
+	mux.HandleFunc("POST /v1/auth/password", h.ChangePassword)
+	mux.HandleFunc("GET /v1/users", h.ListUsers)
+	mux.HandleFunc("POST /v1/users", h.CreateUserByAdmin)
+	mux.HandleFunc("DELETE /v1/users/{id}", h.DeleteUserByAdmin)
+
 	// 工单API
 	mux.HandleFunc("POST /v1/tickets", h.CreateTicket)
 	mux.HandleFunc("GET /v1/tickets", h.ListTickets)
 	mux.HandleFunc("GET /v1/tickets/{id}", h.GetTicket)
 	mux.HandleFunc("PATCH /v1/tickets/{id}", h.UpdateTicket)
 	mux.HandleFunc("DELETE /v1/tickets/{id}", h.DeleteTicket)
+	mux.HandleFunc("GET /v1/public/categories", h.ListPublicCategories)
+	mux.HandleFunc("GET /v1/public/sms/code", h.SendPublicSMSCode)
+	mux.HandleFunc("POST /v1/public/tickets", h.CreatePublicTicket)
 
 	// 批量操作
 	mux.HandleFunc("POST /v1/tickets/batch-delete", h.BatchDelete)
@@ -904,7 +923,7 @@ func (h *Handler) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	runtime.ReadMemStats(&m)
 
 	info := map[string]any{
-		"version":    "3.0.3",
+		"version":    "3.1.0",
 		"go_version": runtime.Version(),
 		"os":         runtime.GOOS,
 		"arch":       runtime.GOARCH,

@@ -2,6 +2,7 @@ package model
 
 type Ticket struct {
 	ID          string  `json:"id"`
+	OwnerID     string  `json:"owner_id,omitempty"`
 	Initiator   string  `json:"initiator"`
 	Category    string  `json:"category"`
 	Title       string  `json:"title"`
@@ -28,6 +29,23 @@ type CreateTicketReq struct {
 	Content   string `json:"content"`
 	Priority  int    `json:"priority"`
 	Tags      string `json:"tags"`
+}
+
+type CreatePublicTicketReq struct {
+	Category string `json:"category"`
+	Content  string `json:"content"`
+	Contact  string `json:"contact"`
+	Phone    string `json:"phone"`
+	SMSCode  string `json:"sms_code"`
+}
+
+type PublicTicketResp struct {
+	ID         string `json:"id"`
+	Category   string `json:"category"`
+	CreatedAt  string `json:"created_at"`
+	Title      string `json:"title"`
+	Message    string `json:"message"`
+	HasContact bool   `json:"has_contact"`
 }
 
 type UpdateTicketReq struct {

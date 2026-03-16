@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tix - 登录</title>
+  <script src="/sober.min.js?v=20260316-03"></script>
+  <script src="/auth.js?v=20260316-03"></script>
+  <style id="login-page-style" data-version="20260316-03">
+    /* login-page-style: 20260316-03 */
+    :root {
+      --md-sys-color-primary: #475569;
+      --md-sys-color-on-primary: #ffffff;
+      --md-sys-color-primary-container: #e2e8f0;
+      --md-sys-color-on-primary-container: #1e293b;
+      --md-sys-color-secondary: #64748b;
+      --md-sys-color-surface: #ffffff;
+      --md-sys-color-on-surface: #1e293b;
+      --md-sys-color-surface-variant: #f1f5f9;
+      --md-sys-color-surface-container: #f8fafc;
+      --md-sys-color-on-surface-variant: #64748b;
+      --md-sys-color-outline: #cbd5e1;
+      --md-sys-color-background: #e2e8f0;
+      --md-sys-color-on-background: #0f172a;
+      --md-sys-color-danger: #dc2626;
+    }
+
+    :root.dark {
+      --md-sys-color-primary: #94a3b8;
+      --md-sys-color-on-primary: #0f172a;
+      --md-sys-color-primary-container: #334155;
+      --md-sys-color-on-primary-container: #e2e8f0;
+      --md-sys-color-secondary: #94a3b8;
+      --md-sys-color-surface: #1e293b;
+      --md-sys-color-on-surface: #f8fafc;
+      --md-sys-color-surface-variant: #334155;
+      --md-sys-color-surface-container: #0f172a;
+      --md-sys-color-on-surface-variant: #cbd5e1;
+      --md-sys-color-outline: #475569;
+      --md-sys-color-background: #020617;
+      --md-sys-color-on-background: #f8fafc;
+      --md-sys-color-danger: #f87171;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      color: var(--md-sys-color-on-background);
+      background:
+        radial-gradient(circle at top left, rgba(148, 163, 184, 0.28), transparent 36%),
+        radial-gradient(circle at bottom right, rgba(71, 85, 105, 0.18), transparent 30%),
+        linear-gradient(160deg, var(--md-sys-color-background), var(--md-sys-color-surface-container));
+      display: grid;
+      place-items: center;
+      padding: 1.5rem;
+    }
+
+    :root.dark body {
+      background:
+        radial-gradient(circle at top left, rgba(148, 163, 184, 0.12), transparent 36%),
+        radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.08), transparent 24%),
+        linear-gradient(160deg, #020617, #0f172a);
+    }
+
+    s-text-field,
+    s-button {
+      --s-color-primary: var(--md-sys-color-primary);
+      --s-color-on-primary: var(--md-sys-color-on-primary);
+      --s-color-outline: var(--md-sys-color-outline);
+      --s-color-surface: var(--md-sys-color-surface);
+      --s-color-on-surface: var(--md-sys-color-on-surface);
+      --s-color-surface-container: var(--md-sys-color-surface-variant);
+      --s-color-on-surface-variant: var(--md-sys-color-on-surface-variant);
+    }
+
+    .auth-shell {
+      width: min(100%, 720px);
+      display: grid;
+      gap: 1.25rem;
+    }
+
+    s-card.auth-card {
+      display: block;
+      width: 100%;
+      min-width: 0;
+      max-width: none;
+      background: color-mix(in srgb, var(--md-sys-color-surface) 90%, transparent);
+      border: 1px solid color-mix(in srgb, var(--md-sys-color-outline) 82%, transparent);
+      border-radius: 1.75rem;
+      padding: 2.25rem;
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+      backdrop-filter: blur(16px);
+    }
+
+    :root.dark s-card.auth-card {
+      box-shadow: 0 24px 60px rgba(2, 6, 23, 0.5);
+    }
+
+    .brand {
+      margin-bottom: 1.9rem;
+    }
+
+    .brand-title {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+      color: var(--md-sys-color-on-surface);
+    }
+
+    .brand-subtitle {
+      font-size: 1rem;
+      line-height: 1.75;
+      color: var(--md-sys-color-on-surface-variant);
+      max-width: 42rem;
+    }
+
+    .auth-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 1.2rem;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+
+    .field-label {
+      font-size: 0.9rem;
+      color: var(--md-sys-color-on-surface-variant);
+    }
+
+    .auth-panel s-text-field,
+    .auth-panel s-button {
+      width: 100%;
+    }
+
+    .panel-title {
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: var(--md-sys-color-on-surface);
+    }
+
+    .panel-hint {
+      margin-top: 0.25rem;
+      font-size: 0.92rem;
+      line-height: 1.7;
+      color: var(--md-sys-color-on-surface-variant);
+    }
+
+    .error-text {
+      min-height: 1.4rem;
+      font-size: 0.9rem;
+      color: var(--md-sys-color-danger);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 0.9rem;
+      margin-top: 0.6rem;
+      align-items: stretch;
+    }
+
+    .actions s-button {
+      flex: 1 1 0;
+      min-width: 0;
+      width: auto;
+    }
+
+    .footer-note {
+      margin-top: 1.35rem;
+      font-size: 0.84rem;
+      line-height: 1.7;
+      color: var(--md-sys-color-on-surface-variant);
+      text-align: center;
+    }
+
+    .top-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 0.9rem;
+    }
+
+    .theme-toggle-btn {
+      min-width: 5rem;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    @media (max-width: 480px) {
+      body {
+        padding: 1rem;
+      }
+
+      s-card.auth-card {
+        padding: 1.35rem;
+        border-radius: 1.2rem;
+      }
+
+      .brand-title {
+        font-size: 1.55rem;
+      }
+
+      .actions {
+        flex-direction: column;
+      }
+
+    }
+  </style>
+</head>
+<body>
+  <div class="auth-shell">
+    <div class="top-actions">
+      <s-button id="themeToggle" class="theme-toggle-btn" type="outlined">深色</s-button>
+    </div>
+
+    <s-card class="auth-card" type="filled">
+      <header class="brand">
+        <h1 class="brand-title">Tix</h1>
+        <p id="brandSubtitle" class="brand-subtitle">正在检查系统初始化状态，请稍候。</p>
+      </header>
+
+      <div class="auth-panel">
+        <div>
+          <div id="panelTitle" class="panel-title">账号登录</div>
+          <div id="panelHint" class="panel-hint">正在加载登录配置。</div>
+        </div>
+
+        <label class="field">
+          <span class="field-label">用户名</span>
+          <s-text-field id="usernameInput" placeholder="例如：admin"></s-text-field>
+        </label>
+
+        <label class="field">
+          <span class="field-label">密码</span>
+          <s-text-field id="passwordInput" type="password" placeholder="请输入密码"></s-text-field>
+        </label>
+
+        <label id="confirmPasswordField" class="field" hidden>
+          <span class="field-label">确认密码</span>
+          <s-text-field id="confirmPasswordInput" type="password" placeholder="请再次输入密码"></s-text-field>
+        </label>
+
+        <div id="errorText" class="error-text"></div>
+
+        <div class="actions">
+          <s-button id="submitBtn" type="filled">登录</s-button>
+          <s-button id="secondaryBtn" type="filled-tonal" hidden>切换到注册</s-button>
+        </div>
+      </div>
+
+      <p id="footerNote" class="footer-note">注册接口仅在系统尚未创建用户时可用；已有管理员后请通过系统设置创建成员账号。</p>
+    </s-card>
+  </div>
+
+  <s-snackbar id="toast"></s-snackbar>
+
+  <script>
+    const API = '/v1';
+    let authMode = 'login';
+    let hasUsers = true;
+
+    function getInputValue(id) {
+      const el = document.getElementById(id);
+      return el ? (el.value || el.getAttribute('value') || '') : '';
+    }
+
+    function setInputValue(id, value) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.value = value;
+      el.setAttribute('value', value);
+    }
+
+    function setLoading(loading) {
+      document.getElementById('submitBtn').disabled = loading;
+      document.getElementById('secondaryBtn').disabled = loading;
+      document.getElementById('themeToggle').disabled = loading;
+    }
+
+    function setError(message) {
+      document.getElementById('errorText').textContent = message || '';
+    }
+
+    function showToast(msg, type = 'info') {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.setAttribute('type', type);
+      toast.show();
+    }
+
+    function updateThemeButton() {
+      const isDark = document.documentElement.classList.contains('dark');
+      const themeToggle = document.getElementById('themeToggle');
+      themeToggle.textContent = isDark ? '浅色' : '深色';
+      themeToggle.setAttribute('title', isDark ? '切换到浅色模式' : '切换到深色模式');
+    }
+
+    function toggleDark() {
+      document.documentElement.classList.toggle('dark');
+      localStorage.setItem('dark', document.documentElement.classList.contains('dark'));
+      updateThemeButton();
+    }
+
+    function setBootstrapState(nextHasUsers) {
+      hasUsers = nextHasUsers;
+      document.getElementById('secondaryBtn').hidden = true;
+      document.getElementById('confirmPasswordField').hidden = nextHasUsers;
+      document.getElementById('brandSubtitle').textContent = nextHasUsers
+        ? '登录后访问工单系统。'
+        : '系统尚未创建任何用户，请先创建首个管理员账号。';
+      document.getElementById('footerNote').textContent = nextHasUsers
+        ? '系统已初始化，注册入口已关闭。请使用现有账号登录。'
+        : '首个账号将自动拥有管理员权限。创建完成后请使用该账号登录系统。';
+      setAuthMode(nextHasUsers ? 'login' : 'register');
+    }
+
+    function setAuthMode(mode) {
+      authMode = mode;
+      const isLogin = mode === 'login';
+      document.getElementById('confirmPasswordField').hidden = isLogin || hasUsers;
+      document.getElementById('panelTitle').textContent = isLogin ? '账号登录' : '创建首个管理员账号';
+      document.getElementById('panelHint').textContent = isLogin
+        ? '使用已有账号进入工单系统。'
+        : '注册仅在首次启动时可用，创建成功后将返回登录表单。';
+      document.getElementById('submitBtn').textContent = isLogin ? '登录' : '创建管理员账号';
+      setError('');
+    }
+
+    async function submitAuth() {
+      const username = getInputValue('usernameInput').trim();
+      const password = getInputValue('passwordInput');
+      const confirmPassword = getInputValue('confirmPasswordInput');
+
+      if (!username || !password) {
+        setError('请输入用户名和密码');
+        return;
+      }
+
+      if (authMode === 'register') {
+        if (!confirmPassword) {
+          setError('请确认密码');
+          return;
+        }
+        if (password !== confirmPassword) {
+          setError('两次输入的密码不一致');
+          return;
+        }
+      }
+
+      setLoading(true);
+      setError('');
+
+      const endpoint = authMode === 'login' ? 'login' : 'register';
+      const successMessage = authMode === 'login' ? '登录成功' : '管理员账号创建成功';
+
+      try {
+        const res = await fetch(`${API}/auth/${endpoint}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        const result = await res.json();
+        if (!res.ok) {
+          throw new Error(result.error?.message || `${successMessage}失败`);
+        }
+
+        if (authMode === 'login') {
+          if (!result.token || !result.user) {
+            throw new Error('登录响应无效');
+          }
+
+          window.TixAuth.setToken(result.token);
+          showToast(successMessage, 'success');
+          window.location.replace(window.TixAuth.getPostLoginRedirect());
+          return;
+        }
+
+        showToast(successMessage, 'success');
+        window.TixAuth.clearAuth();
+        setBootstrapState(true);
+        setInputValue('passwordInput', '');
+        setInputValue('confirmPasswordInput', '');
+        document.getElementById('passwordInput').focus();
+      } catch (error) {
+        setError(error.message || '操作失败');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function redirectIfLoggedIn() {
+      const user = await window.TixAuth.fetchCurrentUser(API);
+      if (user) {
+        window.location.replace(window.TixAuth.getPostLoginRedirect());
+      }
+    }
+
+    async function loadBootstrapState() {
+      const res = await fetch(`${API}/auth/bootstrap-status`);
+      const result = await res.json();
+      if (!res.ok) {
+        throw new Error(result.error?.message || '初始化状态检查失败');
+      }
+      return Boolean(result.has_users);
+    }
+
+    async function initAuthPage() {
+      setLoading(true);
+      setError('');
+
+      try {
+        const nextHasUsers = await loadBootstrapState();
+        setBootstrapState(nextHasUsers);
+        await redirectIfLoggedIn();
+      } catch (error) {
+        setError(error.message || '页面初始化失败');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    if (localStorage.getItem('dark') === 'true' ||
+        (!localStorage.getItem('dark') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('dark');
+    }
+
+    updateThemeButton();
+    initAuthPage();
+
+    document.getElementById('themeToggle').addEventListener('click', toggleDark);
+    document.getElementById('submitBtn').addEventListener('click', submitAuth);
+    document.getElementById('usernameInput').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') submitAuth();
+    });
+    document.getElementById('passwordInput').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') submitAuth();
+    });
+    document.getElementById('confirmPasswordInput').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') submitAuth();
+    });
+  </script>
+</body>
+</html>
