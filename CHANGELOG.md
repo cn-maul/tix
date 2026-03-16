@@ -24,6 +24,11 @@
 - 页面优先适配移动端，兼顾 `375px` 手机宽度与桌面扫码打开场景
 - 提交成功后展示确认信息与工单编号
 
+### 🐛 补丁修复 - 2026-03-16
+
+- 修复 `public.html` 滑块验证码脚本报错：`Cannot access 'width' before initialization`
+- `getImageDimensions()` 内部局部变量改名为 `imageWidth/imageHeight`，避免 `width` 词法作用域冲突
+
 ## v3.0.4-dev - 2026-03-16
 
 ### 🔐 账号系统

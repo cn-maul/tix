@@ -581,8 +581,8 @@
     const sliderLabel = document.getElementById('sliderLabel');
     const sliderHint = document.getElementById('sliderHint');
 
-    const bgCtx = captchaBgCanvas.getContext('2d');
-    const pieceCtx = captchaPieceCanvas.getContext('2d');
+    const bgCtx = captchaBgCanvas?.getContext('2d') || null;
+    const pieceCtx = captchaPieceCanvas?.getContext('2d') || null;
 
     const state = {
       captcha: null,
@@ -639,29 +639,131 @@
       renderCategories(data.items || []);
     }
 
+    function clearCaptchaState() {
+      state.captcha = null;
+      state.bgImage = null;
+      state.templateImage = null;
+      state.pieceBounds = null;
+      state.pieceOffset = 0;
+      state.pieceMaxOffset = 0;
+      captchaBgCanvas.width = 0;
+      captchaBgCanvas.height = 0;
+      captchaPieceCanvas.width = 0;
+      captchaPieceCanvas.height = 0;
+      captchaPiece.style.width = '0px';
+      captchaPiece.style.height = '0px';
+      captchaPiece.style.top = '0px';
+    }
+
     function loadImage(src) {
       return new Promise((resolve, reject) => {
+        if (!src || typeof src !== 'string') {
+          reject(new Error('验证码图片地址无效'));
+          return;
+        }
+
         const image = new Image();
-        image.onload = () => resolve(image);
-        image.onerror = () => reject(new Error('图片加载失败'));
+        let settled = false;
+        const timeoutId = window.setTimeout(() => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          cleanup();
+          reject(new Error('验证码图片加载超时'));
+        }, 10000);
+
+        const cleanup = () => {
+          window.clearTimeout(timeoutId);
+          image.onload = null;
+          image.onerror = null;
+        };
+
+        image.onload = async () => {
+          if (settled) {
+            return;
+          }
+          try {
+            if (typeof image.decode === 'function') {
+              await image.decode().catch(() => {});
+            }
+            if (!image.naturalWidth || !image.naturalHeight) {
+              throw new Error('验证码图片尺寸无效');
+            }
+            settled = true;
+            cleanup();
+            resolve(image);
+          } catch (error) {
+            settled = true;
+            cleanup();
+            reject(error);
+          }
+        };
+        image.onerror = () => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          cleanup();
+          reject(new Error('验证码图片加载失败'));
+        };
         image.src = src;
       });
     }
 
-    function getPieceBounds(image, fallbackTop) {
-      const canvas = document.createElement('canvas');
-      canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(image, 0, 0);
-      const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const { width, height } = canvas;
+    function isImageReady(image) {
+      return Boolean(image && image.complete && image.naturalWidth > 0 && image.naturalHeight > 0);
+    }
 
-      let top = height;
+    function readSafeDimension(value, fallback) {
+      const numeric = Number(value);
+      if (Number.isFinite(numeric) && numeric > 0) {
+        return Math.round(numeric);
+      }
+
+      const fallbackNumeric = Number(fallback);
+      if (Number.isFinite(fallbackNumeric) && fallbackNumeric > 0) {
+        return Math.round(fallbackNumeric);
+      }
+
+      return 0;
+    }
+
+    function getImageDimensions(image, fallbackWidth, fallbackHeight) {
+      const imageWidth = readSafeDimension(image?.naturalWidth || image?.width, fallbackWidth);
+      const imageHeight = readSafeDimension(image?.naturalHeight || image?.height, fallbackHeight);
+
+      if (!imageWidth || !imageHeight) {
+        throw new Error('验证码图片尺寸无效');
+      }
+
+      return { width: imageWidth, height: imageHeight };
+    }
+
+    function getPieceBounds(image, fallbackTop) {
+      if (!isImageReady(image)) {
+        throw new Error('验证码模板图片未加载完成');
+      }
+
+      const { width: sourceWidth, height: sourceHeight } = getImageDimensions(image);
+      const canvas = document.createElement('canvas');
+      canvas.width = sourceWidth;
+      canvas.height = sourceHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        throw new Error('无法初始化验证码画布');
+      }
+
+      const canvasWidth = canvas.width;
+      const canvasHeight = canvas.height;
+      ctx.drawImage(image, 0, 0);
+      const { data } = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
+
+      let top = canvasHeight;
       let bottom = -1;
-      for (let y = 0; y < height; y += 1) {
-        for (let x = 0; x < width; x += 1) {
-          const alpha = data[(y * width + x) * 4 + 3];
+      for (let y = 0; y < canvasHeight; y += 1) {
+        for (let x = 0; x < canvasWidth; x += 1) {
+          const alpha = data[(y * canvasWidth + x) * 4 + 3];
           if (alpha > 8) {
             if (y < top) top = y;
             if (y > bottom) bottom = y;
@@ -671,7 +773,10 @@
 
       if (bottom < top) {
         const topValue = Number.isFinite(fallbackTop) ? fallbackTop : 0;
-        return { top: topValue, height: Math.min(height - topValue, Math.max(48, Math.round(height * 0.28))) };
+        return {
+          top: topValue,
+          height: Math.min(canvasHeight - topValue, Math.max(48, Math.round(canvasHeight * 0.28))),
+        };
       }
 
       return { top, height: bottom - top + 1 };
@@ -692,47 +797,64 @@
     }
 
     function renderCaptcha() {
-      if (!state.captcha || !state.bgImage || !state.templateImage || !state.pieceBounds) {
+      if (!state.captcha || !state.bgImage || !state.templateImage || !state.pieceBounds || !bgCtx || !pieceCtx) {
         return;
       }
 
-      const bgWidth = state.captcha.background_image_width;
-      const bgHeight = state.captcha.background_image_height;
-      const pieceWidth = state.templateImage.naturalWidth;
-      const pieceHeight = state.pieceBounds.height;
-      const pieceTop = state.pieceBounds.top;
+      if (!isImageReady(state.bgImage) || !isImageReady(state.templateImage)) {
+        return;
+      }
 
-      captchaBgCanvas.width = bgWidth;
-      captchaBgCanvas.height = bgHeight;
-      bgCtx.clearRect(0, 0, bgWidth, bgHeight);
-      bgCtx.drawImage(state.bgImage, 0, 0, bgWidth, bgHeight);
+      try {
+        const { width: bgWidth, height: bgHeight } = getImageDimensions(
+          state.bgImage,
+          state.captcha.background_image_width,
+          state.captcha.background_image_height
+        );
+        const { width: pieceWidth } = getImageDimensions(state.templateImage);
+        const pieceHeight = readSafeDimension(state.pieceBounds.height, 0);
+        const pieceTop = readSafeDimension(state.pieceBounds.top, 0);
+        const shellWidth = readSafeDimension(captchaShell.clientWidth, 0);
 
-      captchaPieceCanvas.width = pieceWidth;
-      captchaPieceCanvas.height = pieceHeight;
-      pieceCtx.clearRect(0, 0, pieceWidth, pieceHeight);
-      pieceCtx.drawImage(
-        state.templateImage,
-        0,
-        pieceTop,
-        pieceWidth,
-        pieceHeight,
-        0,
-        0,
-        pieceWidth,
-        pieceHeight
-      );
+        if (!pieceHeight || !shellWidth) {
+          return;
+        }
 
-      const scale = captchaShell.clientWidth / bgWidth;
-      const displayPieceWidth = pieceWidth * scale;
-      const displayPieceHeight = pieceHeight * scale;
-      const displayPieceTop = pieceTop * scale;
+        captchaBgCanvas.width = bgWidth;
+        captchaBgCanvas.height = bgHeight;
+        bgCtx.clearRect(0, 0, bgWidth, bgHeight);
+        bgCtx.drawImage(state.bgImage, 0, 0, bgWidth, bgHeight);
 
-      captchaPiece.style.width = `${displayPieceWidth}px`;
-      captchaPiece.style.height = `${displayPieceHeight}px`;
-      captchaPiece.style.top = `${displayPieceTop}px`;
-      state.pieceMaxOffset = Math.max(0, captchaShell.clientWidth - displayPieceWidth);
-      state.pieceOffset = Math.min(state.pieceOffset, state.pieceMaxOffset);
-      updateSliderUI();
+        captchaPieceCanvas.width = pieceWidth;
+        captchaPieceCanvas.height = pieceHeight;
+        pieceCtx.clearRect(0, 0, pieceWidth, pieceHeight);
+        pieceCtx.drawImage(
+          state.templateImage,
+          0,
+          pieceTop,
+          pieceWidth,
+          pieceHeight,
+          0,
+          0,
+          pieceWidth,
+          pieceHeight
+        );
+
+        const scale = shellWidth / bgWidth;
+        const displayPieceWidth = pieceWidth * scale;
+        const displayPieceHeight = pieceHeight * scale;
+        const displayPieceTop = pieceTop * scale;
+
+        captchaPiece.style.width = `${displayPieceWidth}px`;
+        captchaPiece.style.height = `${displayPieceHeight}px`;
+        captchaPiece.style.top = `${displayPieceTop}px`;
+        state.pieceMaxOffset = Math.max(0, shellWidth - displayPieceWidth);
+        state.pieceOffset = Math.min(state.pieceOffset, state.pieceMaxOffset);
+        updateSliderUI();
+      } catch (error) {
+        clearCaptchaState();
+        setCaptchaStatus('验证码渲染失败，点击重试');
+      }
     }
 
     function closeCaptchaModal() {
@@ -744,10 +866,16 @@
         return;
       }
       captchaModal.hidden = false;
-      renderCaptcha();
+      window.requestAnimationFrame(() => {
+        renderCaptcha();
+      });
     }
 
     async function fetchCaptcha() {
+      if (!bgCtx || !pieceCtx) {
+        throw new Error('浏览器不支持验证码画布');
+      }
+
       state.loadingCaptcha = true;
       state.verified = false;
       setLoading(false);
@@ -774,7 +902,7 @@
         renderCaptcha();
         setCaptchaStatus('点击完成滑块验证');
       } catch (error) {
-        state.captcha = null;
+        clearCaptchaState();
         setCaptchaStatus('验证码加载失败，点击重试');
         throw error;
       } finally {
