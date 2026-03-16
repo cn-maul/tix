@@ -79,7 +79,8 @@ func Auth(db *database.DB) func(http.Handler) http.Handler {
 		"/v1/auth/login":            {},
 		"/v1/auth/register":         {},
 		"/v1/public/categories":     {},
-		"/v1/public/sms/code":       {},
+		"/v1/public/captcha":        {},
+		"/v1/public/captcha/verify": {},
 		"/v1/public/tickets":        {},
 	}
 

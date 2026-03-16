@@ -32,11 +32,16 @@ type CreateTicketReq struct {
 }
 
 type CreatePublicTicketReq struct {
-	Category string `json:"category"`
-	Content  string `json:"content"`
-	Contact  string `json:"contact"`
-	Phone    string `json:"phone"`
-	SMSCode  string `json:"sms_code"`
+	Category  string `json:"category"`
+	Content   string `json:"content"`
+	Contact   string `json:"contact"`
+	CaptchaID string `json:"captcha_id"`
+}
+
+type PublicCaptchaVerifyReq struct {
+	ID      string `json:"id"`
+	X       int    `json:"x"`
+	BgWidth int    `json:"bg_width"`
 }
 
 type PublicTicketResp struct {

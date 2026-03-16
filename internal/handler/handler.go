@@ -22,28 +22,31 @@ import (
 	"tix/internal/model"
 	"tix/internal/service"
 
+	"github.com/tianaiyouqing/tianai-captcha-go/application"
 	"gopkg.in/yaml.v3"
 )
 
 type Handler struct {
-	db         *database.DB
-	svc        *service.TicketService
-	categories []string
-	cfg        *config.Config
-	httpClient *http.Client
-	mu         sync.RWMutex
-	smsMu      sync.RWMutex
-	smsCodes   map[string]string
+	db                    *database.DB
+	svc                   *service.TicketService
+	categories            []string
+	cfg                   *config.Config
+	httpClient            *http.Client
+	captchaApp            *application.TianAiCaptchaApplication
+	mu                    sync.RWMutex
+	publicCaptchaMu       sync.Mutex
+	publicVerifiedCaptcha map[string]time.Time
 }
 
 func NewHandler(db *database.DB, svc *service.TicketService, categories []string, cfg *config.Config) *Handler {
 	return &Handler{
-		db:         db,
-		svc:        svc,
-		categories: slices.Clone(categories),
-		cfg:        cfg,
-		httpClient: &http.Client{Timeout: 15 * time.Second},
-		smsCodes:   make(map[string]string),
+		db:                    db,
+		svc:                   svc,
+		categories:            slices.Clone(categories),
+		cfg:                   cfg,
+		httpClient:            &http.Client{Timeout: 15 * time.Second},
+		captchaApp:            newPublicCaptchaApp(),
+		publicVerifiedCaptcha: make(map[string]time.Time),
 	}
 }
 
@@ -66,7 +69,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /v1/tickets/{id}", h.UpdateTicket)
 	mux.HandleFunc("DELETE /v1/tickets/{id}", h.DeleteTicket)
 	mux.HandleFunc("GET /v1/public/categories", h.ListPublicCategories)
-	mux.HandleFunc("GET /v1/public/sms/code", h.SendPublicSMSCode)
+	mux.HandleFunc("GET /v1/public/captcha", h.GetPublicCaptcha)
+	mux.HandleFunc("POST /v1/public/captcha/verify", h.VerifyPublicCaptcha)
 	mux.HandleFunc("POST /v1/public/tickets", h.CreatePublicTicket)
 
 	// 批量操作

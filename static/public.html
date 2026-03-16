@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Tix - 提交工单</title>
-  <script src="/sober.min.js?v=20260316-public-01"></script>
+  <script src="/sober.min.js?v=20260316-public-02"></script>
   <style>
     :root {
       --md-sys-color-primary: #0f766e;
@@ -16,7 +16,7 @@
       --md-sys-color-surface-strong: #ffffff;
       --md-sys-color-on-surface: #0f172a;
       --md-sys-color-on-surface-variant: #475569;
-      --md-sys-color-outline: rgba(148, 163, 184, 0.5);
+      --md-sys-color-outline: rgba(148, 163, 184, 0.45);
       --md-sys-color-background: #ecfeff;
       --md-sys-color-success: #15803d;
       --md-sys-color-danger: #dc2626;
@@ -121,23 +121,106 @@
       width: 100%;
     }
 
-    .sms-row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 0.75rem;
-      align-items: start;
-    }
-
-    .sms-row s-button {
-      width: auto;
-      min-width: 7.5rem;
-      align-self: stretch;
-    }
-
     .helper {
       font-size: 0.82rem;
       color: var(--md-sys-color-on-surface-variant);
       line-height: 1.5;
+    }
+
+    .captcha-trigger {
+      display: grid;
+      gap: 0.45rem;
+      padding: 0.95rem 1rem;
+      border: 1px solid rgba(15, 118, 110, 0.14);
+      border-radius: 1rem;
+      background:
+        linear-gradient(135deg, rgba(204, 251, 241, 0.9), rgba(240, 253, 250, 0.88)),
+        var(--md-sys-color-surface-strong);
+      cursor: pointer;
+      transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+      outline: none;
+    }
+
+    .captcha-trigger:hover,
+    .captcha-trigger:focus-visible {
+      transform: translateY(-1px);
+      border-color: rgba(15, 118, 110, 0.32);
+      box-shadow: 0 10px 20px rgba(15, 118, 110, 0.08);
+    }
+
+    .captcha-trigger.is-success {
+      border-color: rgba(21, 128, 61, 0.22);
+      background:
+        linear-gradient(135deg, rgba(220, 252, 231, 0.95), rgba(240, 253, 244, 0.88)),
+        var(--md-sys-color-surface-strong);
+    }
+
+    .captcha-trigger.is-disabled {
+      cursor: wait;
+      opacity: 0.78;
+    }
+
+    .captcha-trigger-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    .captcha-trigger-title {
+      font-weight: 700;
+      font-size: 0.95rem;
+    }
+
+    .captcha-status {
+      font-size: 0.82rem;
+      color: var(--md-sys-color-on-surface-variant);
+    }
+
+    .captcha-status.is-success {
+      color: var(--md-sys-color-success);
+      font-weight: 600;
+    }
+
+    .captcha-badge {
+      display: inline-grid;
+      place-items: center;
+      width: 1.45rem;
+      height: 1.45rem;
+      border-radius: 999px;
+      background: rgba(21, 128, 61, 0.92);
+      color: #ffffff;
+      font-size: 0.9rem;
+      font-weight: 700;
+      box-shadow: 0 8px 18px rgba(21, 128, 61, 0.18);
+    }
+
+    .captcha-preview {
+      position: relative;
+      height: 3.75rem;
+      overflow: hidden;
+      border-radius: 0.85rem;
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      background:
+        linear-gradient(120deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.4)),
+        repeating-linear-gradient(135deg, rgba(15, 118, 110, 0.05), rgba(15, 118, 110, 0.05) 0.6rem, transparent 0.6rem, transparent 1.2rem);
+    }
+
+    .captcha-preview::after {
+      content: "点击打开滑块验证";
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      font-size: 0.88rem;
+      color: var(--md-sys-color-on-surface-variant);
+      backdrop-filter: blur(2px);
+    }
+
+    .captcha-trigger.is-success .captcha-preview::after {
+      content: "验证已通过，点击可重新获取";
+      color: var(--md-sys-color-success);
+      font-weight: 600;
     }
 
     .error {
@@ -180,6 +263,168 @@
       font-size: 0.88rem;
     }
 
+    .captcha-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      display: grid;
+      align-items: end;
+      background: rgba(15, 23, 42, 0.34);
+      backdrop-filter: blur(6px);
+      padding: 1rem;
+    }
+
+    .captcha-panel {
+      width: min(100%, 32rem);
+      margin: 0 auto;
+      border-radius: 1.5rem;
+      border: 1px solid rgba(255, 255, 255, 0.58);
+      background: rgba(255, 255, 255, 0.95);
+      box-shadow: 0 20px 50px rgba(15, 23, 42, 0.16);
+      overflow: hidden;
+    }
+
+    .captcha-panel-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      align-items: center;
+      padding: 1rem 1rem 0.6rem;
+    }
+
+    .captcha-panel-title {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    .captcha-panel-text {
+      margin: 0.22rem 0 0;
+      font-size: 0.84rem;
+      line-height: 1.5;
+      color: var(--md-sys-color-on-surface-variant);
+    }
+
+    .plain-btn {
+      border: none;
+      background: rgba(15, 118, 110, 0.1);
+      color: var(--md-sys-color-primary);
+      border-radius: 999px;
+      min-width: 2.5rem;
+      min-height: 2.5rem;
+      padding: 0 0.8rem;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .captcha-stage {
+      padding: 0 1rem 1rem;
+    }
+
+    .captcha-canvas-shell {
+      position: relative;
+      width: 100%;
+      overflow: hidden;
+      border-radius: 1.1rem;
+      background: #dbeafe;
+      border: 1px solid rgba(148, 163, 184, 0.26);
+    }
+
+    .captcha-bg-canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .captcha-piece {
+      position: absolute;
+      left: 0;
+      top: 0;
+      box-shadow: 0 10px 20px rgba(15, 23, 42, 0.22);
+      border-radius: 0.45rem;
+      overflow: hidden;
+      touch-action: none;
+    }
+
+    .captcha-piece canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .captcha-slider {
+      margin-top: 0.95rem;
+      padding: 0.85rem;
+      border-radius: 1rem;
+      background: rgba(240, 253, 250, 0.95);
+      border: 1px solid rgba(15, 118, 110, 0.1);
+    }
+
+    .captcha-slider-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      align-items: center;
+      margin-bottom: 0.75rem;
+      font-size: 0.83rem;
+      color: var(--md-sys-color-on-surface-variant);
+    }
+
+    .slider-track {
+      position: relative;
+      height: 3.25rem;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      overflow: hidden;
+      touch-action: none;
+      user-select: none;
+    }
+
+    .slider-progress {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 0;
+      background: linear-gradient(90deg, rgba(15, 118, 110, 0.22), rgba(45, 212, 191, 0.22));
+    }
+
+    .slider-text {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      font-size: 0.9rem;
+      color: var(--md-sys-color-on-surface-variant);
+      pointer-events: none;
+    }
+
+    .slider-thumb {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 3.25rem;
+      height: 3.25rem;
+      border: none;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #0f766e, #14b8a6);
+      color: white;
+      box-shadow: 0 10px 20px rgba(15, 118, 110, 0.28);
+      cursor: grab;
+      font: inherit;
+      touch-action: none;
+    }
+
+    .slider-thumb:active {
+      cursor: grabbing;
+    }
+
+    .captcha-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+      margin-top: 0.95rem;
+    }
+
     [hidden] {
       display: none !important;
     }
@@ -205,15 +450,9 @@
       s-card.form-card {
         padding: 1.25rem;
       }
-    }
 
-    @media (max-width: 480px) {
-      .sms-row {
-        grid-template-columns: 1fr;
-      }
-
-      .sms-row s-button {
-        width: 100%;
+      .captcha-modal {
+        align-items: center;
       }
     }
   </style>
@@ -224,7 +463,7 @@
       <section class="hero">
         <span class="eyebrow">扫码即可提交</span>
         <h1>公开工单入口</h1>
-        <p>无需登录，适合贴在设备旁、前台桌牌或二维码海报。填写问题描述并选择分类后即可提交。</p>
+        <p>无需登录，适合贴在设备旁、前台桌牌或二维码海报。填写问题描述并选择分类后，完成滑块验证即可提交。</p>
 
         <div class="tips">
           <div class="tip">建议把设备编号、位置、报错现象写清楚，处理会更快。</div>
@@ -235,21 +474,26 @@
       <s-card class="form-card" type="filled">
         <div id="formView">
           <h2 class="section-title">新建工单</h2>
-          <p class="section-text">表单已针对手机端优化，在 375px 宽度下也能完整操作。</p>
+          <p class="section-text">表单已针对手机端优化，验证码弹层和滑块拖动同样支持移动端触控。</p>
 
           <form id="ticketForm" class="form">
             <s-picker id="categoryInput" label="分类" placeholder="请选择分类"></s-picker>
             <s-text-field id="contentInput" type="multiline" rows="5" label="问题描述" placeholder="例如：二楼打印机卡纸，屏幕显示 E32，重新开机后仍无法打印。" max-length="5000"></s-text-field>
             <s-text-field id="contactInput" label="联系方式（可选）" placeholder="例如：13800000000 / 微信 / 工位 A-12" max-length="50"></s-text-field>
             <div class="helper">联系方式最多 50 个字符，不填则会以匿名方式提交。</div>
-            <div class="sms-row">
-              <s-text-field id="phoneInput" label="手机号" placeholder="请输入 11 位手机号" inputmode="numeric" max-length="11"></s-text-field>
-              <s-button id="smsCodeBtn" type="filled-tonal">获取验证码</s-button>
+
+            <div id="captchaTrigger" class="captcha-trigger" role="button" tabindex="0" aria-label="打开滑块验证码">
+              <div class="captcha-trigger-top">
+                <div class="captcha-trigger-title">行为验证码</div>
+                <div id="captchaStatus" class="captcha-status">验证码加载中...</div>
+                <span id="captchaBadge" class="captcha-badge" hidden>✓</span>
+              </div>
+              <div class="captcha-preview"></div>
             </div>
-            <s-text-field id="smsCodeInput" label="短信验证码" placeholder="请输入 6 位验证码" inputmode="numeric" max-length="6"></s-text-field>
-            <div class="helper">当前为测试模式，接口会记录日志并返回固定验证码，后续可直接接入真实短信服务。</div>
+            <div class="helper">页面打开时会自动获取验证码。提交前必须先完成滑块验证。</div>
+
             <div id="errorText" class="error"></div>
-            <s-button id="submitBtn" type="filled">提交工单</s-button>
+            <s-button id="submitBtn" type="filled" disabled>完成验证后提交</s-button>
           </form>
         </div>
 
@@ -264,6 +508,45 @@
     </div>
   </main>
 
+  <div id="captchaModal" class="captcha-modal" hidden>
+    <div class="captcha-panel">
+      <div class="captcha-panel-head">
+        <div>
+          <h3 class="captcha-panel-title">拖动滑块完成验证</h3>
+          <p class="captcha-panel-text">拖动下方圆形滑块，让缺口和拼图块对齐。释放后会自动校验。</p>
+        </div>
+        <button id="closeCaptchaBtn" class="plain-btn" type="button">关闭</button>
+      </div>
+
+      <div class="captcha-stage">
+        <div id="captchaShell" class="captcha-canvas-shell">
+          <canvas id="captchaBgCanvas" class="captcha-bg-canvas"></canvas>
+          <div id="captchaPiece" class="captcha-piece">
+            <canvas id="captchaPieceCanvas"></canvas>
+          </div>
+        </div>
+
+        <div class="captcha-slider">
+          <div class="captcha-slider-head">
+            <span id="sliderLabel">向右拖动完成拼图</span>
+            <span id="sliderHint">释放后自动校验</span>
+          </div>
+
+          <div id="sliderTrack" class="slider-track">
+            <div id="sliderProgress" class="slider-progress"></div>
+            <div id="sliderText" class="slider-text">按住圆点向右拖动</div>
+            <button id="sliderThumb" class="slider-thumb" type="button">→</button>
+          </div>
+
+          <div class="captcha-actions">
+            <s-button id="refreshCaptchaBtn" type="filled-tonal">换一张</s-button>
+            <s-button id="verifyAgainBtn" type="outlined">重置滑块</s-button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <s-snackbar id="snackbar"></s-snackbar>
 
   <script>
@@ -272,9 +555,9 @@
     const categoryInput = document.getElementById('categoryInput');
     const contentInput = document.getElementById('contentInput');
     const contactInput = document.getElementById('contactInput');
-    const phoneInput = document.getElementById('phoneInput');
-    const smsCodeInput = document.getElementById('smsCodeInput');
-    const smsCodeBtn = document.getElementById('smsCodeBtn');
+    const captchaTrigger = document.getElementById('captchaTrigger');
+    const captchaStatus = document.getElementById('captchaStatus');
+    const captchaBadge = document.getElementById('captchaBadge');
     const submitBtn = document.getElementById('submitBtn');
     const errorText = document.getElementById('errorText');
     const formView = document.getElementById('formView');
@@ -282,16 +565,37 @@
     const successMessage = document.getElementById('successMessage');
     const againBtn = document.getElementById('againBtn');
     const snackbar = document.getElementById('snackbar');
-    let smsCountdown = 0;
-    let smsTimer = null;
 
-    function normalizePhone(phone) {
-      return String(phone || '').trim().replace(/\s+/g, '').replace(/-/g, '').replace(/^\+86/, '');
-    }
+    const captchaModal = document.getElementById('captchaModal');
+    const closeCaptchaBtn = document.getElementById('closeCaptchaBtn');
+    const refreshCaptchaBtn = document.getElementById('refreshCaptchaBtn');
+    const verifyAgainBtn = document.getElementById('verifyAgainBtn');
+    const captchaShell = document.getElementById('captchaShell');
+    const captchaBgCanvas = document.getElementById('captchaBgCanvas');
+    const captchaPiece = document.getElementById('captchaPiece');
+    const captchaPieceCanvas = document.getElementById('captchaPieceCanvas');
+    const sliderTrack = document.getElementById('sliderTrack');
+    const sliderProgress = document.getElementById('sliderProgress');
+    const sliderText = document.getElementById('sliderText');
+    const sliderThumb = document.getElementById('sliderThumb');
+    const sliderLabel = document.getElementById('sliderLabel');
+    const sliderHint = document.getElementById('sliderHint');
 
-    function isValidPhone(phone) {
-      return /^1\d{10}$/.test(normalizePhone(phone));
-    }
+    const bgCtx = captchaBgCanvas.getContext('2d');
+    const pieceCtx = captchaPieceCanvas.getContext('2d');
+
+    const state = {
+      captcha: null,
+      bgImage: null,
+      templateImage: null,
+      pieceBounds: null,
+      pieceOffset: 0,
+      pieceMaxOffset: 0,
+      drag: null,
+      verified: false,
+      loadingCaptcha: false,
+      verifying: false,
+    };
 
     function showToast(message) {
       snackbar.textContent = message;
@@ -299,29 +603,19 @@
     }
 
     function setLoading(loading) {
-      submitBtn.disabled = loading;
-      submitBtn.textContent = loading ? '提交中...' : '提交工单';
+      submitBtn.disabled = loading || !state.verified;
+      submitBtn.textContent = loading ? '提交中...' : (state.verified ? '提交工单' : '完成验证后提交');
     }
 
-    function setSMSButtonState() {
-      const counting = smsCountdown > 0;
-      smsCodeBtn.disabled = counting;
-      smsCodeBtn.textContent = counting ? `${smsCountdown}s 后重试` : '获取验证码';
+    function setCaptchaStatus(message, success = false) {
+      captchaStatus.textContent = message;
+      captchaStatus.classList.toggle('is-success', success);
+      captchaTrigger.classList.toggle('is-success', success);
+      captchaBadge.hidden = !success;
     }
 
-    function startSMSCountdown() {
-      smsCountdown = 60;
-      setSMSButtonState();
-      clearInterval(smsTimer);
-      smsTimer = setInterval(() => {
-        smsCountdown -= 1;
-        if (smsCountdown <= 0) {
-          clearInterval(smsTimer);
-          smsTimer = null;
-          smsCountdown = 0;
-        }
-        setSMSButtonState();
-      }, 1000);
+    function setCaptchaTriggerBusy(busy) {
+      captchaTrigger.classList.toggle('is-disabled', busy);
     }
 
     function renderCategories(items) {
@@ -345,49 +639,262 @@
       renderCategories(data.items || []);
     }
 
+    function loadImage(src) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error('图片加载失败'));
+        image.src = src;
+      });
+    }
+
+    function getPieceBounds(image, fallbackTop) {
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(image, 0, 0);
+      const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const { width, height } = canvas;
+
+      let top = height;
+      let bottom = -1;
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          const alpha = data[(y * width + x) * 4 + 3];
+          if (alpha > 8) {
+            if (y < top) top = y;
+            if (y > bottom) bottom = y;
+          }
+        }
+      }
+
+      if (bottom < top) {
+        const topValue = Number.isFinite(fallbackTop) ? fallbackTop : 0;
+        return { top: topValue, height: Math.min(height - topValue, Math.max(48, Math.round(height * 0.28))) };
+      }
+
+      return { top, height: bottom - top + 1 };
+    }
+
+    function resetSliderPosition() {
+      state.pieceOffset = 0;
+      updateSliderUI();
+      sliderText.textContent = '按住圆点向右拖动';
+      sliderLabel.textContent = '向右拖动完成拼图';
+      sliderHint.textContent = '释放后自动校验';
+    }
+
+    function updateSliderUI() {
+      sliderThumb.style.transform = `translateX(${state.pieceOffset}px)`;
+      sliderProgress.style.width = `${Math.min(sliderTrack.clientWidth, state.pieceOffset + sliderThumb.offsetWidth / 2)}px`;
+      captchaPiece.style.transform = `translateX(${state.pieceOffset}px)`;
+    }
+
+    function renderCaptcha() {
+      if (!state.captcha || !state.bgImage || !state.templateImage || !state.pieceBounds) {
+        return;
+      }
+
+      const bgWidth = state.captcha.background_image_width;
+      const bgHeight = state.captcha.background_image_height;
+      const pieceWidth = state.templateImage.naturalWidth;
+      const pieceHeight = state.pieceBounds.height;
+      const pieceTop = state.pieceBounds.top;
+
+      captchaBgCanvas.width = bgWidth;
+      captchaBgCanvas.height = bgHeight;
+      bgCtx.clearRect(0, 0, bgWidth, bgHeight);
+      bgCtx.drawImage(state.bgImage, 0, 0, bgWidth, bgHeight);
+
+      captchaPieceCanvas.width = pieceWidth;
+      captchaPieceCanvas.height = pieceHeight;
+      pieceCtx.clearRect(0, 0, pieceWidth, pieceHeight);
+      pieceCtx.drawImage(
+        state.templateImage,
+        0,
+        pieceTop,
+        pieceWidth,
+        pieceHeight,
+        0,
+        0,
+        pieceWidth,
+        pieceHeight
+      );
+
+      const scale = captchaShell.clientWidth / bgWidth;
+      const displayPieceWidth = pieceWidth * scale;
+      const displayPieceHeight = pieceHeight * scale;
+      const displayPieceTop = pieceTop * scale;
+
+      captchaPiece.style.width = `${displayPieceWidth}px`;
+      captchaPiece.style.height = `${displayPieceHeight}px`;
+      captchaPiece.style.top = `${displayPieceTop}px`;
+      state.pieceMaxOffset = Math.max(0, captchaShell.clientWidth - displayPieceWidth);
+      state.pieceOffset = Math.min(state.pieceOffset, state.pieceMaxOffset);
+      updateSliderUI();
+    }
+
+    function closeCaptchaModal() {
+      captchaModal.hidden = true;
+    }
+
+    function openCaptchaModal() {
+      if (!state.captcha || state.loadingCaptcha) {
+        return;
+      }
+      captchaModal.hidden = false;
+      renderCaptcha();
+    }
+
+    async function fetchCaptcha() {
+      state.loadingCaptcha = true;
+      state.verified = false;
+      setLoading(false);
+      setCaptchaTriggerBusy(true);
+      setCaptchaStatus('验证码加载中...');
+      resetSliderPosition();
+
+      try {
+        const res = await fetch(`${API}/captcha`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data?.error?.message || '验证码获取失败');
+        }
+
+        const [bgImage, templateImage] = await Promise.all([
+          loadImage(data.background_image),
+          loadImage(data.template_image),
+        ]);
+
+        state.captcha = data;
+        state.bgImage = bgImage;
+        state.templateImage = templateImage;
+        state.pieceBounds = getPieceBounds(templateImage, Number(data.slider_y) || 0);
+        renderCaptcha();
+        setCaptchaStatus('点击完成滑块验证');
+      } catch (error) {
+        state.captcha = null;
+        setCaptchaStatus('验证码加载失败，点击重试');
+        throw error;
+      } finally {
+        state.loadingCaptcha = false;
+        setCaptchaTriggerBusy(false);
+      }
+    }
+
+    async function verifyCaptcha() {
+      if (!state.captcha || state.verifying) {
+        return;
+      }
+
+      state.verifying = true;
+      sliderText.textContent = '正在校验...';
+      sliderHint.textContent = '请稍候';
+
+      const scale = captchaShell.clientWidth / state.captcha.background_image_width;
+      const originalX = Math.round(state.pieceOffset / scale);
+
+      try {
+        const res = await fetch(`${API}/captcha/verify`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            id: state.captcha.id,
+            x: originalX,
+            bg_width: state.captcha.background_image_width,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data?.error?.message || '验证失败');
+        }
+
+        state.verified = true;
+        setLoading(false);
+        setCaptchaStatus('验证通过，可提交工单', true);
+        sliderText.textContent = '验证通过';
+        sliderLabel.textContent = '拼图已对齐';
+        sliderHint.textContent = '现在可以提交工单';
+        closeCaptchaModal();
+        showToast('滑块验证通过');
+      } catch (error) {
+        state.verified = false;
+        setLoading(false);
+        errorText.textContent = error.message || '验证失败，请重试。';
+        showToast(error.message || '验证失败');
+        await fetchCaptcha().catch(() => {});
+      } finally {
+        state.verifying = false;
+      }
+    }
+
+    function resetCaptchaVerification() {
+      state.verified = false;
+      setLoading(false);
+      if (state.captcha) {
+        setCaptchaStatus('点击完成滑块验证');
+      }
+      resetSliderPosition();
+    }
+
+    function updateDrag(clientX) {
+      if (!state.drag) {
+        return;
+      }
+
+      const offset = Math.min(
+        Math.max(0, state.drag.startOffset + clientX - state.drag.startX),
+        state.pieceMaxOffset
+      );
+      state.pieceOffset = offset;
+      sliderText.textContent = '松开后自动校验';
+      sliderHint.textContent = '继续拖动到正确位置';
+      updateSliderUI();
+    }
+
+    function endDrag() {
+      if (!state.drag) {
+        return;
+      }
+
+      sliderThumb.releasePointerCapture?.(state.drag.pointerId);
+      state.drag = null;
+      verifyCaptcha();
+    }
+
+    function beginDrag(pointerId, clientX, startOffset) {
+      if (!state.captcha || state.loadingCaptcha || state.verifying) {
+        return;
+      }
+
+      resetCaptchaVerification();
+      state.pieceOffset = startOffset;
+      updateSliderUI();
+      state.drag = {
+        pointerId,
+        startX: clientX,
+        startOffset,
+      };
+      sliderThumb.setPointerCapture?.(pointerId);
+      sliderText.textContent = '拖动中...';
+      sliderHint.textContent = '对齐后松开';
+    }
+
     function resetForm() {
       categoryInput.value = '';
       contentInput.value = '';
       contactInput.value = '';
-      phoneInput.value = '';
-      smsCodeInput.value = '';
       errorText.textContent = '';
       formView.hidden = false;
       successView.hidden = true;
-      clearInterval(smsTimer);
-      smsTimer = null;
-      smsCountdown = 0;
-      setSMSButtonState();
-    }
-
-    async function requestSMSCode(event) {
-      event.preventDefault();
-      errorText.textContent = '';
-
-      const phone = normalizePhone(phoneInput.value);
-      if (!isValidPhone(phone)) {
-        errorText.textContent = '请输入正确的 11 位手机号。';
-        return;
-      }
-
-      smsCodeBtn.disabled = true;
-      try {
-        const res = await fetch(`${API}/sms/code?phone=${encodeURIComponent(phone)}`);
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          errorText.textContent = data?.error?.message || '验证码发送失败，请稍后重试。';
-          smsCodeBtn.disabled = false;
-          setSMSButtonState();
-          return;
-        }
-
-        startSMSCountdown();
-        showToast(data.code ? `测试验证码：${data.code}` : (data.message || '验证码已发送'));
-      } catch (error) {
-        smsCodeBtn.disabled = false;
-        setSMSButtonState();
-        errorText.textContent = '网络异常，请稍后重试。';
-      }
+      closeCaptchaModal();
+      resetCaptchaVerification();
+      fetchCaptcha().catch(() => {
+        errorText.textContent = '验证码加载失败，请点击验证区域重试。';
+      });
     }
 
     async function submitTicket(event) {
@@ -398,8 +905,7 @@
         category: categoryInput.value.trim(),
         content: contentInput.value.trim(),
         contact: contactInput.value.trim(),
-        phone: normalizePhone(phoneInput.value),
-        sms_code: smsCodeInput.value.trim(),
+        captcha_id: state.captcha?.id || '',
       };
 
       if (!payload.category) {
@@ -410,12 +916,8 @@
         errorText.textContent = '请填写问题描述。';
         return;
       }
-      if (!isValidPhone(payload.phone)) {
-        errorText.textContent = '请输入正确的 11 位手机号。';
-        return;
-      }
-      if (!payload.sms_code) {
-        errorText.textContent = '请输入短信验证码。';
+      if (!state.verified) {
+        errorText.textContent = '请先完成滑块验证。';
         return;
       }
 
@@ -432,6 +934,10 @@
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           errorText.textContent = data?.error?.message || '提交失败，请稍后重试。';
+          if (data?.error?.code === 'INVALID_CAPTCHA') {
+            state.verified = false;
+            await fetchCaptcha().catch(() => {});
+          }
           return;
         }
 
@@ -439,6 +945,7 @@
         successView.hidden = false;
         successMessage.textContent = `${data.message} 工单号：${data.id}，分类：${data.category}。`;
         showToast('工单已提交');
+        state.verified = false;
       } catch (error) {
         errorText.textContent = '网络异常，请稍后重试。';
       } finally {
@@ -447,14 +954,94 @@
     }
 
     ticketForm.addEventListener('submit', submitTicket);
-    smsCodeBtn.addEventListener('click', requestSMSCode);
     againBtn.addEventListener('click', resetForm);
-    setSMSButtonState();
-
-    loadCategories().catch(() => {
-      errorText.textContent = '分类加载失败，请刷新页面后重试。';
-      showToast('分类加载失败');
+    refreshCaptchaBtn.addEventListener('click', async () => {
+      errorText.textContent = '';
+      await fetchCaptcha().catch((error) => {
+        errorText.textContent = error.message || '验证码加载失败，请稍后重试。';
+      });
     });
+    verifyAgainBtn.addEventListener('click', resetCaptchaVerification);
+    closeCaptchaBtn.addEventListener('click', closeCaptchaModal);
+
+    captchaTrigger.addEventListener('click', async () => {
+      errorText.textContent = '';
+      if (!state.captcha && !state.loadingCaptcha) {
+        try {
+          await fetchCaptcha();
+        } catch (error) {
+          errorText.textContent = error.message || '验证码加载失败，请稍后重试。';
+          return;
+        }
+      }
+
+      if (state.verified) {
+        resetCaptchaVerification();
+        await fetchCaptcha().catch((error) => {
+          errorText.textContent = error.message || '验证码加载失败，请稍后重试。';
+        });
+      }
+
+      openCaptchaModal();
+    });
+
+    captchaTrigger.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        captchaTrigger.click();
+      }
+    });
+
+    sliderThumb.addEventListener('pointerdown', (event) => {
+      beginDrag(event.pointerId, event.clientX, state.pieceOffset);
+      event.preventDefault();
+    });
+
+    sliderTrack.addEventListener('pointerdown', (event) => {
+      if (event.target === sliderThumb) {
+        return;
+      }
+      const rect = sliderTrack.getBoundingClientRect();
+      const targetOffset = Math.min(
+        Math.max(0, event.clientX - rect.left - sliderThumb.offsetWidth / 2),
+        state.pieceMaxOffset
+      );
+      beginDrag(event.pointerId, event.clientX, targetOffset);
+    });
+
+    window.addEventListener('pointermove', (event) => {
+      if (!state.drag || state.drag.pointerId !== event.pointerId) {
+        return;
+      }
+      updateDrag(event.clientX);
+    });
+    window.addEventListener('pointerup', (event) => {
+      if (!state.drag || state.drag.pointerId !== event.pointerId) {
+        return;
+      }
+      endDrag();
+    });
+    window.addEventListener('pointercancel', (event) => {
+      if (!state.drag || state.drag.pointerId !== event.pointerId) {
+        return;
+      }
+      endDrag();
+    });
+
+    window.addEventListener('resize', renderCaptcha);
+    captchaModal.addEventListener('click', (event) => {
+      if (event.target === captchaModal) {
+        closeCaptchaModal();
+      }
+    });
+
+    setLoading(false);
+
+    Promise.all([loadCategories(), fetchCaptcha()])
+      .catch((error) => {
+        errorText.textContent = error.message || '页面初始化失败，请刷新后重试。';
+        showToast('页面初始化失败');
+      });
   </script>
 </body>
 </html>
