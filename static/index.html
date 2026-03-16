@@ -2065,6 +2065,7 @@
             msg += '，已恢复 AI 配置';
           }
           showToast(msg, 'success');
+          await loadCategories();
           loadTickets();
           closeSettingsModal();
         } else if (result.error) {

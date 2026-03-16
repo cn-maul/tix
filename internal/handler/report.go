@@ -28,7 +28,7 @@ func (h *Handler) ExportReport(w http.ResponseWriter, r *http.Request) {
 		opts.EndDate = endDate
 	}
 
-	resp, err := h.svc.List(opts)
+	resp, err := h.svc.List(r.Context(), opts)
 	if err != nil {
 		h.error(w, 500, "LIST_ERROR", "获取工单失败")
 		return
@@ -40,7 +40,8 @@ func (h *Handler) ExportReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 获取字体路径
-	fontPath := h.cfg.PDF.FontPath
+	cfg := h.snapshotConfig()
+	fontPath := cfg.PDF.FontPath
 	if fontPath == "" {
 		h.error(w, 500, "NO_FONT", "未配置PDF字体路径，请在设置中配置")
 		return

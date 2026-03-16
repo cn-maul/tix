@@ -27,12 +27,10 @@
 ```bash
 # 直接运行
 ./tix
-
-# 指定端口
-./tix -port 9000
 ```
 
 首次运行会自动创建 `config.yaml` 配置文件。
+服务会优先使用 `config.yaml` 中的端口；若被占用，会自动尝试后续端口。
 
 ### 访问
 
@@ -70,7 +68,7 @@ pdf:
 
 ## 构建
 
-需要 Go 1.21+：
+需要 Go 1.26+：
 
 ```bash
 git clone https://github.com/cn-maul/tix.git

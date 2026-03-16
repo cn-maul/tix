@@ -1,18 +1,20 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"fmt"
-	"tix/internal/config"
-	"tix/internal/database"
-	"tix/internal/handler"
-	"tix/internal/service"
 	"io/fs"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"strings"
+	"tix/internal/config"
+	"tix/internal/database"
+	"tix/internal/handler"
+	"tix/internal/middleware"
+	"tix/internal/service"
 
 	_ "modernc.org/sqlite" // SQLite driver
 )
@@ -43,13 +45,13 @@ func main() {
 	}
 	defer db.Close()
 
-	if err := db.InitSchema(); err != nil {
+	if err := db.InitSchema(context.Background()); err != nil {
 		log.Fatalf("❌ 初始化数据库失败: %v", err)
 	}
 
 	// 创建服务
 	svc := service.NewTicketService(db)
-	aiSvc := service.NewAIService(&cfg.AI)
+	aiSvc := service.NewAIService(&cfg.AI, nil)
 	svc.SetAI(aiSvc)
 
 	h := handler.NewHandler(svc, cfg.Categories, cfg)
@@ -84,7 +86,9 @@ func main() {
 	printBanner(url, actualPort)
 
 	// 启动服务
-	server := &http.Server{Handler: mux}
+	server := &http.Server{
+		Handler: middleware.Chain(mux, middleware.Recover, middleware.Logger, middleware.CORS),
+	}
 	if err := server.Serve(listener); err != nil {
 		log.Fatalf("❌ 服务错误: %v", err)
 	}
@@ -114,7 +118,7 @@ func printBanner(url string, port int) {
 	boxWidth := 48
 
 	lines := []string{
-		"  Tix v3.0.1 - 工单管理系统",
+		"  Tix v3.0.3 - 工单管理系统",
 		fmt.Sprintf("  状态: ✓ 运行中 (端口 %d)", port),
 		fmt.Sprintf("  地址: %s", url),
 		"  按 Ctrl+C 停止服务",

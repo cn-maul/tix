@@ -31,7 +31,10 @@ type CreateTicketReq struct {
 }
 
 type UpdateTicketReq struct {
+	Initiator   *string `json:"initiator"`
 	Category    *string `json:"category"`
+	Title       *string `json:"title"`
+	Content     *string `json:"content"`
 	Resolution  *string `json:"resolution"`
 	IsCompleted *bool   `json:"is_completed"`
 	CompletedAt *string `json:"completed_at"`
@@ -41,8 +44,8 @@ type UpdateTicketReq struct {
 }
 
 type BatchUpdateReq struct {
-	IDs      []string        `json:"ids"`
-	Updates  map[string]any  `json:"updates"`
+	IDs     []string       `json:"ids"`
+	Updates map[string]any `json:"updates"`
 }
 
 type ListResponse struct {
@@ -62,11 +65,11 @@ type ErrorDetail struct {
 }
 
 type StatsResponse struct {
-	Total       int                    `json:"total"`
-	Completed   int                    `json:"completed"`
-	Pending     int                    `json:"pending"`
-	Today       int                    `json:"today"`
-	ThisWeek    int                    `json:"this_week"`
-	ByCategory  []map[string]any       `json:"by_category"`
-	ByPriority  []map[string]any       `json:"by_priority"`
+	Total      int              `json:"total"`
+	Completed  int              `json:"completed"`
+	Pending    int              `json:"pending"`
+	Today      int              `json:"today"`
+	ThisWeek   int              `json:"this_week"`
+	ByCategory []map[string]any `json:"by_category"`
+	ByPriority []map[string]any `json:"by_priority"`
 }

@@ -2,13 +2,11 @@ package handler
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"tix/internal/config"
-	"tix/internal/database"
-	"tix/internal/model"
-	"tix/internal/service"
 	"log"
 	"net/http"
 	"os"
@@ -17,7 +15,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+	"tix/internal/config"
+	"tix/internal/database"
+	"tix/internal/model"
+	"tix/internal/service"
 
 	"gopkg.in/yaml.v3"
 )
@@ -26,10 +29,17 @@ type Handler struct {
 	svc        *service.TicketService
 	categories []string
 	cfg        *config.Config
+	httpClient *http.Client
+	mu         sync.RWMutex
 }
 
 func NewHandler(svc *service.TicketService, categories []string, cfg *config.Config) *Handler {
-	return &Handler{svc: svc, categories: categories, cfg: cfg}
+	return &Handler{
+		svc:        svc,
+		categories: slices.Clone(categories),
+		cfg:        cfg,
+		httpClient: &http.Client{Timeout: 15 * time.Second},
+	}
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
@@ -85,7 +95,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 func (h *Handler) CreateTicket(w http.ResponseWriter, r *http.Request) {
 	var req model.CreateTicketReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := h.decodeJSON(r, &req); err != nil {
 		h.error(w, 400, "INVALID_JSON", "Invalid JSON body")
 		return
 	}
@@ -115,23 +125,24 @@ func (h *Handler) CreateTicket(w http.ResponseWriter, r *http.Request) {
 
 	// 处理分类：AI自动选择
 	if req.Category == "" {
-		if len(h.cfg.Categories) == 0 {
+		cfg := h.snapshotConfig()
+		if len(cfg.Categories) == 0 {
 			h.error(w, 400, "NO_CATEGORY", "请先在设置中创建分类")
 			return
 		}
-		if h.cfg.AI.APIKey == "" {
+		if cfg.AI.APIKey == "" {
 			h.error(w, 400, "AI_NOT_CONFIGURED", "请先在设置中配置AI，或手动选择分类")
 			return
 		}
 		// 动态创建 AI 服务，确保使用最新配置
-		aiSvc := service.NewAIService(&h.cfg.AI)
+		aiSvc := service.NewAIService(&cfg.AI, h.httpClient)
 		if aiSvc == nil {
 			h.error(w, 500, "AI_ERROR", "AI服务初始化失败")
 			return
 		}
 		// AI选择分类
-		log.Printf("AI分类请求: content=%s, categories=%v", req.Content[:min(50, len(req.Content))], h.cfg.Categories)
-		category, err := aiSvc.SelectCategoryFromList(req.Content, h.cfg.Categories)
+		log.Printf("AI分类请求: content=%s, categories=%v", req.Content[:min(50, len(req.Content))], cfg.Categories)
+		category, err := aiSvc.SelectCategoryFromList(r.Context(), req.Content, cfg.Categories)
 		if err != nil {
 			log.Printf("AI分类失败: %v", err)
 			h.error(w, 500, "AI_ERROR", fmt.Sprintf("AI分类失败: %v，请手动选择分类", err))
@@ -141,7 +152,7 @@ func (h *Handler) CreateTicket(w http.ResponseWriter, r *http.Request) {
 		req.Category = category
 	}
 
-	t, err := h.svc.Create(&req)
+	t, err := h.svc.Create(r.Context(), &req)
 	if err != nil {
 		h.error(w, 500, "INTERNAL_ERROR", "Failed to create ticket")
 		return
@@ -199,7 +210,7 @@ func (h *Handler) ListTickets(w http.ResponseWriter, r *http.Request) {
 		opts.SortDesc = strings.ToLower(v) == "desc"
 	}
 
-	resp, err := h.svc.List(opts)
+	resp, err := h.svc.List(r.Context(), opts)
 	if err != nil {
 		h.error(w, 500, "INTERNAL_ERROR", "Failed to list tickets")
 		return
@@ -209,7 +220,7 @@ func (h *Handler) ListTickets(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) GetTicket(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	t, err := h.svc.Get(id)
+	t, err := h.svc.Get(r.Context(), id)
 	if err != nil {
 		h.error(w, 404, "NOT_FOUND", "Ticket not found")
 		return
@@ -221,12 +232,20 @@ func (h *Handler) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
 	var req model.UpdateTicketReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := h.decodeJSON(r, &req); err != nil {
 		h.error(w, 400, "INVALID_JSON", "Invalid JSON body")
 		return
 	}
 
 	updates := make(map[string]any)
+	if req.Initiator != nil {
+		*req.Initiator = strings.TrimSpace(*req.Initiator)
+		if len(*req.Initiator) < 1 || len(*req.Initiator) > 50 {
+			h.error(w, 400, "INVALID_INITIATOR", "initiator must be 1-50 characters")
+			return
+		}
+		updates["initiator"] = *req.Initiator
+	}
 	if req.Category != nil {
 		// 空分类不更新，非空分类需要验证
 		if *req.Category != "" {
@@ -237,6 +256,17 @@ func (h *Handler) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 			updates["category"] = *req.Category
 		}
 		// 空分类则不更新，保持原值
+	}
+	if req.Title != nil {
+		updates["title"] = strings.TrimSpace(*req.Title)
+	}
+	if req.Content != nil {
+		*req.Content = strings.TrimSpace(*req.Content)
+		if len(*req.Content) < 1 || len(*req.Content) > 5000 {
+			h.error(w, 400, "INVALID_CONTENT", "content must be 1-5000 characters")
+			return
+		}
+		updates["content"] = *req.Content
 	}
 	if req.Resolution != nil {
 		updates["resolution"] = *req.Resolution
@@ -272,7 +302,11 @@ func (h *Handler) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.Update(id, updates); err != nil {
+	if err := h.svc.Update(r.Context(), id, updates); err != nil {
+		if database.IsNotFound(err) || err == sql.ErrNoRows {
+			h.error(w, 404, "NOT_FOUND", "Ticket not found")
+			return
+		}
 		h.error(w, 500, "INTERNAL_ERROR", "Failed to update ticket")
 		return
 	}
@@ -282,7 +316,11 @@ func (h *Handler) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) DeleteTicket(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := h.svc.Delete(id); err != nil {
+	if err := h.svc.Delete(r.Context(), id); err != nil {
+		if database.IsNotFound(err) || err == sql.ErrNoRows {
+			h.error(w, 404, "NOT_FOUND", "Ticket not found")
+			return
+		}
 		h.error(w, 500, "INTERNAL_ERROR", "Failed to delete ticket")
 		return
 	}
@@ -293,7 +331,7 @@ func (h *Handler) BatchDelete(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		IDs []string `json:"ids"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := h.decodeJSON(r, &req); err != nil {
 		h.error(w, 400, "INVALID_JSON", "Invalid JSON body")
 		return
 	}
@@ -302,7 +340,7 @@ func (h *Handler) BatchDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.BatchDelete(req.IDs); err != nil {
+	if err := h.svc.BatchDelete(r.Context(), req.IDs); err != nil {
 		h.error(w, 500, "INTERNAL_ERROR", "Failed to delete tickets")
 		return
 	}
@@ -311,7 +349,7 @@ func (h *Handler) BatchDelete(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) BatchUpdate(w http.ResponseWriter, r *http.Request) {
 	var req model.BatchUpdateReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := h.decodeJSON(r, &req); err != nil {
 		h.error(w, 400, "INVALID_JSON", "Invalid JSON body")
 		return
 	}
@@ -345,7 +383,7 @@ func (h *Handler) BatchUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.svc.BatchUpdate(req.IDs, req.Updates); err != nil {
+	if err := h.svc.BatchUpdate(r.Context(), req.IDs, req.Updates); err != nil {
 		h.error(w, 500, "INTERNAL_ERROR", "Failed to update tickets")
 		return
 	}
@@ -355,13 +393,13 @@ func (h *Handler) BatchUpdate(w http.ResponseWriter, r *http.Request) {
 // ==================== 分类 ====================
 
 func (h *Handler) GetCategories(w http.ResponseWriter, r *http.Request) {
-	h.json(w, 200, h.categories)
+	h.json(w, 200, h.snapshotCategories())
 }
 
 // ==================== 统计 ====================
 
 func (h *Handler) GetStats(w http.ResponseWriter, r *http.Request) {
-	stats, err := h.svc.GetStats()
+	stats, err := h.svc.GetStats(r.Context())
 	if err != nil {
 		h.error(w, 500, "INTERNAL_ERROR", "Failed to get stats")
 		return
@@ -376,7 +414,7 @@ func (h *Handler) GetInitiators(w http.ResponseWriter, r *http.Request) {
 			limit = n
 		}
 	}
-	initiators, err := h.svc.GetInitiators(limit)
+	initiators, err := h.svc.GetInitiators(r.Context(), limit)
 	if err != nil {
 		h.error(w, 500, "INTERNAL_ERROR", "Failed to get initiators")
 		return
@@ -388,28 +426,29 @@ func (h *Handler) GetInitiators(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ExportTickets(w http.ResponseWriter, r *http.Request) {
 	opts := database.ListOptions{Limit: 10000}
-	tickets, _, err := h.svc.ListRaw(opts)
+	tickets, _, err := h.svc.ListRaw(r.Context(), opts)
 	if err != nil {
 		h.error(w, 500, "INTERNAL_ERROR", "Failed to export tickets")
 		return
 	}
 
 	// 导出时包含完整配置信息
+	cfg := h.snapshotConfig()
 	exportData := map[string]interface{}{
 		"tickets": tickets,
 		"config": map[string]interface{}{
-			"categories": h.cfg.Categories,
-			"ai": map[string]string{
-				"api_key":  h.cfg.AI.APIKey,
-				"base_url": h.cfg.AI.BaseURL,
-				"model":    h.cfg.AI.Model,
+			"categories": cfg.Categories,
+			"ai": map[string]any{
+				"configured": cfg.AI.APIKey != "",
+				"base_url":   cfg.AI.BaseURL,
+				"model":      cfg.AI.Model,
 			},
 			"siyuan": map[string]string{
-				"api_url":     h.cfg.SiYuan.APIURL,
-				"notebook_id": h.cfg.SiYuan.NotebookID,
+				"api_url":     cfg.SiYuan.APIURL,
+				"notebook_id": cfg.SiYuan.NotebookID,
 			},
 			"pdf": map[string]string{
-				"font_path": h.cfg.PDF.FontPath,
+				"font_path": cfg.PDF.FontPath,
 			},
 		},
 	}
@@ -420,7 +459,7 @@ func (h *Handler) ExportTickets(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 	opts := database.ListOptions{Limit: 10000}
-	tickets, _, err := h.svc.ListRaw(opts)
+	tickets, _, err := h.svc.ListRaw(r.Context(), opts)
 	if err != nil {
 		h.error(w, 500, "INTERNAL_ERROR", "Failed to export tickets")
 		return
@@ -507,29 +546,33 @@ func (h *Handler) ImportTickets(w http.ResponseWriter, r *http.Request) {
 	if err := json.Unmarshal(fileContent.Bytes(), &exportData); err == nil && len(exportData.Tickets) > 0 {
 		// 新格式
 		tickets = exportData.Tickets
-		// 恢复配置
-		if len(exportData.Config.Categories) > 0 {
-			h.cfg.Categories = exportData.Config.Categories
-			h.categories = h.cfg.Categories // 同步更新
-			configImported = true
-		}
-		if exportData.Config.AI.APIKey != "" || exportData.Config.AI.Model != "" {
-			h.cfg.AI.APIKey = exportData.Config.AI.APIKey
-			h.cfg.AI.BaseURL = exportData.Config.AI.BaseURL
-			h.cfg.AI.Model = exportData.Config.AI.Model
-			configImported = true
-		}
-		if exportData.Config.SiYuan.NotebookID != "" {
-			h.cfg.SiYuan.APIURL = exportData.Config.SiYuan.APIURL
-			h.cfg.SiYuan.NotebookID = exportData.Config.SiYuan.NotebookID
-			configImported = true
-		}
-		if exportData.Config.PDF.FontPath != "" {
-			h.cfg.PDF.FontPath = exportData.Config.PDF.FontPath
-			configImported = true
-		}
+		configImported = len(exportData.Config.Categories) > 0 ||
+			exportData.Config.AI.APIKey != "" ||
+			exportData.Config.AI.Model != "" ||
+			exportData.Config.SiYuan.NotebookID != "" ||
+			exportData.Config.PDF.FontPath != ""
 		if configImported {
-			config.Save(h.cfg)
+			if err := h.updateConfig(func(cfg *config.Config) error {
+				if len(exportData.Config.Categories) > 0 {
+					cfg.Categories = slices.Clone(exportData.Config.Categories)
+				}
+				if exportData.Config.AI.APIKey != "" || exportData.Config.AI.Model != "" {
+					cfg.AI.APIKey = exportData.Config.AI.APIKey
+					cfg.AI.BaseURL = exportData.Config.AI.BaseURL
+					cfg.AI.Model = exportData.Config.AI.Model
+				}
+				if exportData.Config.SiYuan.NotebookID != "" {
+					cfg.SiYuan.APIURL = exportData.Config.SiYuan.APIURL
+					cfg.SiYuan.NotebookID = exportData.Config.SiYuan.NotebookID
+				}
+				if exportData.Config.PDF.FontPath != "" {
+					cfg.PDF.FontPath = exportData.Config.PDF.FontPath
+				}
+				return nil
+			}); err != nil {
+				h.error(w, 500, "SAVE_ERROR", "Failed to save config")
+				return
+			}
 		}
 	} else {
 		// 旧格式（只有工单数组）
@@ -539,7 +582,7 @@ func (h *Handler) ImportTickets(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	imported, skipped, err := h.svc.Import(tickets)
+	imported, skipped, err := h.svc.Import(r.Context(), tickets)
 	if err != nil {
 		h.error(w, 500, "INTERNAL_ERROR", "Failed to import tickets")
 		return
@@ -559,20 +602,22 @@ func (h *Handler) ImportTickets(w http.ResponseWriter, r *http.Request) {
 // ==================== 配置 ====================
 
 func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
+	snapshot := h.snapshotConfig()
 	cfg := map[string]any{
-		"categories": h.cfg.Categories,
-		"has_ai":     h.cfg.AI.APIKey != "",
-		"has_siyuan": h.cfg.SiYuan.NotebookID != "",
-		"pdf_font":   h.cfg.PDF.FontPath != "",
+		"categories": snapshot.Categories,
+		"has_ai":     snapshot.AI.APIKey != "",
+		"has_siyuan": snapshot.SiYuan.NotebookID != "",
+		"pdf_font":   snapshot.PDF.FontPath != "",
 	}
 	h.json(w, 200, cfg)
 }
 
 func (h *Handler) GetAIConfig(w http.ResponseWriter, r *http.Request) {
+	cfg := h.snapshotConfig()
 	h.json(w, 200, map[string]string{
-		"api_key":  maskAPIKey(h.cfg.AI.APIKey),
-		"base_url": h.cfg.AI.BaseURL,
-		"model":    h.cfg.AI.Model,
+		"api_key":  maskAPIKey(cfg.AI.APIKey),
+		"base_url": cfg.AI.BaseURL,
+		"model":    cfg.AI.Model,
 	})
 }
 
@@ -582,29 +627,27 @@ func (h *Handler) SaveAIConfig(w http.ResponseWriter, r *http.Request) {
 		BaseURL *string `json:"base_url"`
 		Model   *string `json:"model"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := h.decodeJSON(r, &req); err != nil {
 		h.error(w, 400, "INVALID_JSON", "Invalid JSON body")
 		return
 	}
 
-	// 使用指针区分"未发送"和"发送空字符串"
-	if req.APIKey != nil {
-		// 如果发送的是空字符串或 "CLEAR"，则清空配置
-		if *req.APIKey == "" || *req.APIKey == "CLEAR" {
-			h.cfg.AI.APIKey = ""
-		} else if !strings.Contains(*req.APIKey, "****") {
-			// 脱敏格式不更新
-			h.cfg.AI.APIKey = *req.APIKey
+	if err := h.updateConfig(func(cfg *config.Config) error {
+		if req.APIKey != nil {
+			if *req.APIKey == "" || *req.APIKey == "CLEAR" {
+				cfg.AI.APIKey = ""
+			} else if !strings.Contains(*req.APIKey, "****") {
+				cfg.AI.APIKey = *req.APIKey
+			}
 		}
-	}
-	if req.BaseURL != nil {
-		h.cfg.AI.BaseURL = *req.BaseURL
-	}
-	if req.Model != nil {
-		h.cfg.AI.Model = *req.Model
-	}
-
-	if err := h.saveConfig(); err != nil {
+		if req.BaseURL != nil {
+			cfg.AI.BaseURL = *req.BaseURL
+		}
+		if req.Model != nil {
+			cfg.AI.Model = *req.Model
+		}
+		return nil
+	}); err != nil {
 		h.error(w, 500, "SAVE_ERROR", "Failed to save config")
 		return
 	}
@@ -620,18 +663,18 @@ func (h *Handler) TestAIConfig(w http.ResponseWriter, r *http.Request) {
 	// 允许空 body
 	json.NewDecoder(r.Body).Decode(&req)
 
-	// 使用实际传入值或配置值
+	cfg := h.snapshotConfig()
 	apiKey := req.APIKey
 	if apiKey == "" {
-		apiKey = h.cfg.AI.APIKey
+		apiKey = cfg.AI.APIKey
 	}
 	baseURL := req.BaseURL
 	if baseURL == "" {
-		baseURL = h.cfg.AI.BaseURL
+		baseURL = cfg.AI.BaseURL
 	}
 	model := req.Model
 	if model == "" {
-		model = h.cfg.AI.Model
+		model = cfg.AI.Model
 	}
 
 	if apiKey == "" {
@@ -639,7 +682,7 @@ func (h *Handler) TestAIConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.svc.TestAI(apiKey, baseURL, model)
+	result, err := h.svc.TestAI(r.Context(), apiKey, baseURL, model)
 	if err != nil {
 		h.error(w, 500, "TEST_FAILED", err.Error())
 		return
@@ -648,14 +691,15 @@ func (h *Handler) TestAIConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetPDFConfig(w http.ResponseWriter, r *http.Request) {
-	fontPath := h.cfg.PDF.FontPath
+	cfg := h.snapshotConfig()
+	fontPath := cfg.PDF.FontPath
 	if fontPath == "" {
 		fontPath = config.DetectFontPath()
 	}
 	h.json(w, 200, map[string]string{
-		"font_path":       fontPath,
-		"current_os":      runtime.GOOS,
-		"detected_path":   config.DetectFontPath(),
+		"font_path":     fontPath,
+		"current_os":    runtime.GOOS,
+		"detected_path": config.DetectFontPath(),
 	})
 }
 
@@ -663,14 +707,15 @@ func (h *Handler) SavePDFConfig(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		FontPath string `json:"font_path"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := h.decodeJSON(r, &req); err != nil {
 		h.error(w, 400, "INVALID_JSON", "Invalid JSON body")
 		return
 	}
 
-	h.cfg.PDF.FontPath = req.FontPath
-
-	if err := h.saveConfig(); err != nil {
+	if err := h.updateConfig(func(cfg *config.Config) error {
+		cfg.PDF.FontPath = req.FontPath
+		return nil
+	}); err != nil {
 		h.error(w, 500, "SAVE_ERROR", "Failed to save config")
 		return
 	}
@@ -678,9 +723,10 @@ func (h *Handler) SavePDFConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetSiYuanConfig(w http.ResponseWriter, r *http.Request) {
+	cfg := h.snapshotConfig()
 	h.json(w, 200, map[string]string{
-		"api_url":     h.cfg.SiYuan.APIURL,
-		"notebook_id": h.cfg.SiYuan.NotebookID,
+		"api_url":     cfg.SiYuan.APIURL,
+		"notebook_id": cfg.SiYuan.NotebookID,
 	})
 }
 
@@ -689,15 +735,16 @@ func (h *Handler) SaveSiYuanConfig(w http.ResponseWriter, r *http.Request) {
 		APIURL     string `json:"api_url"`
 		NotebookID string `json:"notebook_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := h.decodeJSON(r, &req); err != nil {
 		h.error(w, 400, "INVALID_JSON", "Invalid JSON body")
 		return
 	}
 
-	h.cfg.SiYuan.APIURL = req.APIURL
-	h.cfg.SiYuan.NotebookID = req.NotebookID
-
-	if err := h.saveConfig(); err != nil {
+	if err := h.updateConfig(func(cfg *config.Config) error {
+		cfg.SiYuan.APIURL = req.APIURL
+		cfg.SiYuan.NotebookID = req.NotebookID
+		return nil
+	}); err != nil {
 		h.error(w, 500, "SAVE_ERROR", "Failed to save config")
 		return
 	}
@@ -705,17 +752,27 @@ func (h *Handler) SaveSiYuanConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) TestSiYuanConfig(w http.ResponseWriter, r *http.Request) {
-	apiURL := h.cfg.SiYuan.APIURL
+	cfg := h.snapshotConfig()
+	apiURL := cfg.SiYuan.APIURL
 	if apiURL == "" {
 		apiURL = "http://127.0.0.1:6806"
 	}
 
-	resp, err := http.Get(apiURL + "/api/system/version")
+	req, err := http.NewRequestWithContext(r.Context(), "GET", apiURL+"/api/system/version", nil)
+	if err != nil {
+		h.error(w, 500, "CONNECTION_FAILED", err.Error())
+		return
+	}
+	resp, err := h.httpClient.Do(req)
 	if err != nil {
 		h.error(w, 500, "CONNECTION_FAILED", err.Error())
 		return
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		h.error(w, 502, "BAD_GATEWAY", fmt.Sprintf("SiYuan returned status %d", resp.StatusCode))
+		return
+	}
 
 	var result struct {
 		Code int    `json:"code"`
@@ -733,14 +790,14 @@ func (h *Handler) TestSiYuanConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetCategoriesConfig(w http.ResponseWriter, r *http.Request) {
-	h.json(w, 200, h.cfg.Categories)
+	h.json(w, 200, h.snapshotCategories())
 }
 
 func (h *Handler) AddCategory(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name string `json:"name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := h.decodeJSON(r, &req); err != nil {
 		h.error(w, 400, "INVALID_JSON", "Invalid JSON body")
 		return
 	}
@@ -751,20 +808,20 @@ func (h *Handler) AddCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if slices.Contains(h.cfg.Categories, req.Name) {
+	if slices.Contains(h.snapshotCategories(), req.Name) {
 		h.error(w, 400, "DUPLICATE", "Category already exists")
 		return
 	}
 
-	h.cfg.Categories = append(h.cfg.Categories, req.Name)
-	sort.Strings(h.cfg.Categories)
-	h.categories = h.cfg.Categories
-
-	if err := h.saveConfig(); err != nil {
+	if err := h.updateConfig(func(cfg *config.Config) error {
+		cfg.Categories = append(cfg.Categories, req.Name)
+		sort.Strings(cfg.Categories)
+		return nil
+	}); err != nil {
 		h.error(w, 500, "SAVE_ERROR", "Failed to save config")
 		return
 	}
-	h.json(w, 201, h.cfg.Categories)
+	h.json(w, 201, h.snapshotCategories())
 }
 
 func (h *Handler) UpdateCategory(w http.ResponseWriter, r *http.Request) {
@@ -772,7 +829,7 @@ func (h *Handler) UpdateCategory(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name string `json:"name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := h.decodeJSON(r, &req); err != nil {
 		h.error(w, 400, "INVALID_JSON", "Invalid JSON body")
 		return
 	}
@@ -783,44 +840,61 @@ func (h *Handler) UpdateCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idx := slices.Index(h.cfg.Categories, oldName)
+	categories := h.snapshotCategories()
+	idx := slices.Index(categories, oldName)
 	if idx == -1 {
 		h.error(w, 404, "NOT_FOUND", "Category not found")
 		return
 	}
 
-	if slices.Contains(h.cfg.Categories, req.Name) && req.Name != oldName {
+	if slices.Contains(categories, req.Name) && req.Name != oldName {
 		h.error(w, 400, "DUPLICATE", "Category already exists")
 		return
 	}
 
-	h.cfg.Categories[idx] = req.Name
-	h.categories = h.cfg.Categories
-
-	if err := h.saveConfig(); err != nil {
+	if err := h.updateConfig(func(cfg *config.Config) error {
+		idx := slices.Index(cfg.Categories, oldName)
+		if idx == -1 {
+			return sql.ErrNoRows
+		}
+		cfg.Categories[idx] = req.Name
+		return nil
+	}); err != nil {
+		if err == sql.ErrNoRows {
+			h.error(w, 404, "NOT_FOUND", "Category not found")
+			return
+		}
 		h.error(w, 500, "SAVE_ERROR", "Failed to save config")
 		return
 	}
-	h.json(w, 200, h.cfg.Categories)
+	h.json(w, 200, h.snapshotCategories())
 }
 
 func (h *Handler) DeleteCategory(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 
-	idx := slices.Index(h.cfg.Categories, name)
+	idx := slices.Index(h.snapshotCategories(), name)
 	if idx == -1 {
 		h.error(w, 404, "NOT_FOUND", "Category not found")
 		return
 	}
 
-	h.cfg.Categories = slices.Delete(h.cfg.Categories, idx, idx+1)
-	h.categories = h.cfg.Categories
-
-	if err := h.saveConfig(); err != nil {
+	if err := h.updateConfig(func(cfg *config.Config) error {
+		idx := slices.Index(cfg.Categories, name)
+		if idx == -1 {
+			return sql.ErrNoRows
+		}
+		cfg.Categories = slices.Delete(cfg.Categories, idx, idx+1)
+		return nil
+	}); err != nil {
+		if err == sql.ErrNoRows {
+			h.error(w, 404, "NOT_FOUND", "Category not found")
+			return
+		}
 		h.error(w, 500, "SAVE_ERROR", "Failed to save config")
 		return
 	}
-	h.json(w, 200, h.cfg.Categories)
+	h.json(w, 200, h.snapshotCategories())
 }
 
 // ==================== 系统信息 ====================
@@ -830,14 +904,14 @@ func (h *Handler) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	runtime.ReadMemStats(&m)
 
 	info := map[string]any{
-		"version":      "1.0.0",
-		"go_version":   runtime.Version(),
-		"os":           runtime.GOOS,
-		"arch":         runtime.GOARCH,
-		"cpu_count":    runtime.NumCPU(),
-		"goroutines":   runtime.NumGoroutine(),
-		"memory_mb":    m.Alloc / 1024 / 1024,
-		"heap_mb":      m.HeapAlloc / 1024 / 1024,
+		"version":    "3.0.3",
+		"go_version": runtime.Version(),
+		"os":         runtime.GOOS,
+		"arch":       runtime.GOARCH,
+		"cpu_count":  runtime.NumCPU(),
+		"goroutines": runtime.NumGoroutine(),
+		"memory_mb":  m.Alloc / 1024 / 1024,
+		"heap_mb":    m.HeapAlloc / 1024 / 1024,
 	}
 	h.json(w, 200, info)
 }
@@ -848,7 +922,8 @@ func (h *Handler) PushToSiyuan(w http.ResponseWriter, r *http.Request) {
 	startDate := r.URL.Query().Get("start_date")
 	endDate := r.URL.Query().Get("end_date")
 
-	if h.cfg.SiYuan.APIURL == "" || h.cfg.SiYuan.NotebookID == "" {
+	cfg := h.snapshotConfig()
+	if cfg.SiYuan.APIURL == "" || cfg.SiYuan.NotebookID == "" {
 		h.error(w, 400, "NO_CONFIG", "SiYuan not configured")
 		return
 	}
@@ -858,7 +933,7 @@ func (h *Handler) PushToSiyuan(w http.ResponseWriter, r *http.Request) {
 		EndDate:   endDate,
 		Limit:     10000,
 	}
-	tickets, _, err := h.svc.ListRaw(opts)
+	tickets, _, err := h.svc.ListRaw(r.Context(), opts)
 	if err != nil {
 		h.error(w, 500, "INTERNAL_ERROR", "Failed to get tickets")
 		return
@@ -881,7 +956,7 @@ func (h *Handler) PushToSiyuan(w http.ResponseWriter, r *http.Request) {
 		docTitle := fmt.Sprintf("%s月工作报告", formatMonth(month))
 		content := buildSiyuanContent(ts, docTitle)
 
-		if err := pushToSiyuanNote(h.cfg.SiYuan.APIURL, h.cfg.SiYuan.NotebookID, docTitle, content); err != nil {
+		if err := pushToSiyuanNote(r.Context(), h.httpClient, cfg.SiYuan.APIURL, cfg.SiYuan.NotebookID, docTitle, content); err != nil {
 			log.Printf("Failed to push to SiYuan for %s: %v", month, err)
 			continue
 		}
@@ -897,10 +972,38 @@ func (h *Handler) PushToSiyuan(w http.ResponseWriter, r *http.Request) {
 // ==================== 工具函数 ====================
 
 func (h *Handler) isValidCategory(cat string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	return slices.Contains(h.categories, cat)
 }
 
-func (h *Handler) saveConfig() error {
+func (h *Handler) snapshotConfig() config.Config {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	cfg := *h.cfg
+	cfg.Categories = slices.Clone(h.cfg.Categories)
+	return cfg
+}
+
+func (h *Handler) snapshotCategories() []string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return slices.Clone(h.categories)
+}
+
+func (h *Handler) updateConfig(update func(*config.Config) error) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if err := update(h.cfg); err != nil {
+		return err
+	}
+	h.categories = slices.Clone(h.cfg.Categories)
+	return h.saveConfigLocked()
+}
+
+func (h *Handler) saveConfigLocked() error {
 	data, err := yaml.Marshal(h.cfg)
 	if err != nil {
 		return err
@@ -912,6 +1015,12 @@ func (h *Handler) json(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
+}
+
+func (h *Handler) decodeJSON(r *http.Request, dst any) error {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	return dec.Decode(dst)
 }
 
 func (h *Handler) error(w http.ResponseWriter, status int, code, message string) {
@@ -983,7 +1092,7 @@ func buildSiyuanContent(tickets []model.Ticket, title string) string {
 	return buf.String()
 }
 
-func pushToSiyuanNote(apiURL, notebookID, title, content string) error {
+func pushToSiyuanNote(ctx context.Context, client *http.Client, apiURL, notebookID, title, content string) error {
 	payload := map[string]any{
 		"notebook": notebookID,
 		"path":     "/" + title,
@@ -991,7 +1100,13 @@ func pushToSiyuanNote(apiURL, notebookID, title, content string) error {
 	}
 	body, _ := json.Marshal(payload)
 
-	resp, err := http.Post(apiURL+"/api/filetree/createDocWithMd", "application/json", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL+"/api/filetree/createDocWithMd", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

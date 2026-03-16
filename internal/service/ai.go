@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,20 +15,24 @@ import (
 )
 
 type AIService struct {
-	cfg *config.AIConfig
+	cfg    *config.AIConfig
+	client *http.Client
 }
 
-func NewAIService(cfg *config.AIConfig) *AIService {
+func NewAIService(cfg *config.AIConfig, client *http.Client) *AIService {
 	if cfg == nil || cfg.APIKey == "" {
 		return nil
 	}
-	return &AIService{cfg: cfg}
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
+	}
+	return &AIService{cfg: cfg, client: client}
 }
 
 type aiChatRequest struct {
-	Model    string       `json:"model"`
-	Messages []aiMessage  `json:"messages"`
-	Stream   bool         `json:"stream"`
+	Model    string      `json:"model"`
+	Messages []aiMessage `json:"messages"`
+	Stream   bool        `json:"stream"`
 }
 
 type aiMessage struct {
@@ -46,7 +51,7 @@ type aiChatResponse struct {
 	} `json:"error"`
 }
 
-func (s *AIService) callAPI(prompt string) (string, error) {
+func (s *AIService) callAPI(ctx context.Context, prompt string) (string, error) {
 	if s == nil || s.cfg.APIKey == "" {
 		return "", errors.New("AI not configured")
 	}
@@ -69,7 +74,7 @@ func (s *AIService) callAPI(prompt string) (string, error) {
 	}
 
 	body, _ := json.Marshal(req)
-	httpReq, err := http.NewRequest("POST", baseURL+"/chat/completions", bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
@@ -77,8 +82,7 @@ func (s *AIService) callAPI(prompt string) (string, error) {
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+s.cfg.APIKey)
 
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(httpReq)
+	resp, err := s.client.Do(httpReq)
 	if err != nil {
 		return "", err
 	}
@@ -100,7 +104,7 @@ func (s *AIService) callAPI(prompt string) (string, error) {
 	return strings.TrimSpace(chatResp.Choices[0].Message.Content), nil
 }
 
-func (s *AIService) GenerateTitle(content string) (string, error) {
+func (s *AIService) GenerateTitle(ctx context.Context, content string) (string, error) {
 	// 截取前200字
 	runes := []rune(content)
 	if len(runes) > 200 {
@@ -112,7 +116,7 @@ func (s *AIService) GenerateTitle(content string) (string, error) {
 工单内容：
 %s`, content)
 
-	result, err := s.callAPI(prompt)
+	result, err := s.callAPI(ctx, prompt)
 	if err != nil {
 		// fallback
 		if len(runes) > 15 {
@@ -139,7 +143,7 @@ func (s *AIService) SelectCategory(content string) (string, error) {
 	return "", nil
 }
 
-func (s *AIService) SelectCategoryFromList(content string, categories []string) (string, error) {
+func (s *AIService) SelectCategoryFromList(ctx context.Context, content string, categories []string) (string, error) {
 	if len(categories) == 0 {
 		return "", nil
 	}
@@ -152,7 +156,7 @@ func (s *AIService) SelectCategoryFromList(content string, categories []string) 
 工单内容：
 %s`, categoryList, content)
 
-	result, err := s.callAPI(prompt)
+	result, err := s.callAPI(ctx, prompt)
 	if err != nil {
 		return categories[0], nil
 	}
@@ -165,7 +169,7 @@ func (s *AIService) SelectCategoryFromList(content string, categories []string) 
 	return categories[0], nil
 }
 
-func (s *AIService) Test(apiKey, baseURL, model string) (string, error) {
+func (s *AIService) Test(ctx context.Context, apiKey, baseURL, model string) (string, error) {
 	// 创建临时client测试
 	testService := &AIService{
 		cfg: &config.AIConfig{
@@ -173,7 +177,8 @@ func (s *AIService) Test(apiKey, baseURL, model string) (string, error) {
 			BaseURL: baseURL,
 			Model:   model,
 		},
+		client: s.client,
 	}
 
-	return testService.callAPI("请回复'OK'")
+	return testService.callAPI(ctx, "请回复'OK'")
 }
