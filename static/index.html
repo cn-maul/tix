@@ -1525,7 +1525,7 @@
       const settingsBtn = document.getElementById('settingsBtn');
 
       if (currentUser) {
-        badge.textContent = `${currentUser.username} (${currentUser.role})`;
+        badge.textContent = currentUser.username;
         badge.classList.remove('hidden');
         logoutBtn.classList.remove('hidden');
       } else {
@@ -1750,9 +1750,9 @@
         const priorityLabels = ['', '低', '普通', '高', '紧急'];
         const priority = Math.min(4, Math.max(1, Number(t.priority) || 2));
         const isSelected = selectedIds.has(t.id);
-        const categoryText = `分类：${escapeHtml(t.category || '未分类')}`;
-        const priorityText = `优先级：${priorityLabels[priority]}`;
-        const statusText = t.is_completed ? '状态：已完成' : '状态：处理中';
+        const categoryText = escapeHtml(t.category || '未分类');
+        const priorityText = priorityLabels[priority];
+        const statusText = t.is_completed ? '已完成' : '处理中';
         return `
         <div class="ticket-card ${isSelected ? 'selected' : ''}"
              data-id="${t.id}">

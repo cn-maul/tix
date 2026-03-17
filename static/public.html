@@ -493,7 +493,7 @@
             <div class="helper">页面打开时会自动获取验证码。提交前必须先完成滑块验证。</div>
 
             <div id="errorText" class="error"></div>
-            <s-button id="submitBtn" type="filled" disabled>完成验证后提交</s-button>
+            <s-button id="submitBtn" type="filled" disabled submit>完成验证后提交</s-button>
           </form>
         </div>
 
@@ -1036,10 +1036,6 @@
         captcha_id: state.captcha?.id || '',
       };
 
-      if (!payload.category) {
-        errorText.textContent = '请选择分类。';
-        return;
-      }
       if (!payload.content) {
         errorText.textContent = '请填写问题描述。';
         return;
@@ -1082,6 +1078,12 @@
     }
 
     ticketForm.addEventListener('submit', submitTicket);
+    submitBtn.addEventListener('click', (e) => {
+      // 如果 s-button 的 submit 属性没有触发表单提交，手动触发
+      if (!e.defaultPrevented) {
+        submitTicket(e);
+      }
+    });
     againBtn.addEventListener('click', resetForm);
     refreshCaptchaBtn.addEventListener('click', async () => {
       errorText.textContent = '';

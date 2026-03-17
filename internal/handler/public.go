@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 	"tix/internal/model"
+	"tix/internal/service"
 
 	captchaCommon "github.com/tianaiyouqing/tianai-captcha-go/common"
 	captchaModel "github.com/tianaiyouqing/tianai-captcha-go/common/model"
@@ -103,10 +105,32 @@ func (h *Handler) CreatePublicTicket(w http.ResponseWriter, r *http.Request) {
 	req.Contact = strings.TrimSpace(req.Contact)
 	req.CaptchaID = strings.TrimSpace(req.CaptchaID)
 
+	// 处理分类：AI自动选择（如果未手动选择）
 	if req.Category == "" {
-		h.error(w, 400, "INVALID_CATEGORY", "category is required")
-		return
+		cfg := h.snapshotConfig()
+		if len(cfg.Categories) == 0 {
+			h.error(w, 400, "NO_CATEGORY", "请先在设置中创建分类")
+			return
+		}
+		if cfg.AI.APIKey == "" {
+			h.error(w, 400, "AI_NOT_CONFIGURED", "请先在设置中配置AI，或手动选择分类")
+			return
+		}
+		// 动态创建 AI 服务，确保使用最新配置
+		aiSvc := service.NewAIService(&cfg.AI, h.httpClient)
+		if aiSvc == nil {
+			h.error(w, 500, "AI_ERROR", "AI服务初始化失败")
+			return
+		}
+		// AI选择分类
+		category, err := aiSvc.SelectCategoryFromList(r.Context(), req.Content, cfg.Categories)
+		if err != nil {
+			h.error(w, 500, "AI_ERROR", fmt.Sprintf("AI分类失败: %v，请手动选择分类", err))
+			return
+		}
+		req.Category = category
 	}
+
 	if !h.isValidCategory(req.Category) {
 		h.error(w, 400, "INVALID_CATEGORY", "category not in allowed list")
 		return
