@@ -1,0 +1,14 @@
+tix.exe
+tix
+tix-linux-amd64
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.bat
+.git
+.gitignore
+Docs/
+DESIGN.md
+**/node_modules
+web/dist

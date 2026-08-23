@@ -1,0 +1,16 @@
+# ============================================
+# tix 工单系统 - 使用预编译二进制的最小镜像
+# 本机（无需 Docker）先运行 build.sh linux amd64 得到 tix-linux-amd64，
+# 把「tix-linux-amd64 + 本文件」传到 Linux 机器，然后执行：
+#   docker build -t tix -f Dockerfile.binary .
+#   docker run -d -p 8881:8881 -v tix-data:/data --name tix tix
+# ============================================
+
+FROM scratch
+COPY tix-linux-amd64 /tix
+ENV TZ=Asia/Shanghai
+WORKDIR /data
+EXPOSE 8881
+VOLUME ["/data"]
+ENTRYPOINT ["/tix"]
+CMD ["-db", "/data/tix.db"]
