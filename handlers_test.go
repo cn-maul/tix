@@ -605,3 +605,26 @@ func TestAuthMiddleware(t *testing.T) {
 	h.ServeHTTP(rr4, req4)
 	requireStatus(t, rr4, http.StatusUnauthorized)
 }
+
+func TestSPATitleInjection(t *testing.T) {
+	a := newTestApp(t)
+
+	// 未配置站点名：保持默认标题
+	h := a.routes()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if !bytes.Contains(rec.Body.Bytes(), []byte("<title>tix 工单系统</title>")) {
+		t.Fatalf("default title missing: %s", rec.Body.String()[:120])
+	}
+
+	// 配置站点名：注入到 <title>，特殊字符做 HTML 转义
+	if err := setSetting(a.db, "site_name", "XX中学&维修站"); err != nil {
+		t.Fatalf("setSetting: %v", err)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if !bytes.Contains(rec.Body.Bytes(), []byte("<title>XX中学&amp;维修站</title>")) {
+		t.Fatalf("injected title missing: %s", rec.Body.String()[:120])
+	}
+}

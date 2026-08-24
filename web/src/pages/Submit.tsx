@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   CheckCircle2,
@@ -36,6 +37,7 @@ import {
   type GuestTicketDetail,
 } from '@/api/tickets'
 import { fetchSubmitCategories } from '@/api/categories'
+import { getSettings } from '@/api/settings'
 import StatusBadge from '@/components/StatusBadge'
 
 const fallbackCategories = ['硬件故障', '软件问题', '网络问题', '打印机故障', '其他']
@@ -49,6 +51,13 @@ export default function Submit() {
   const [categories, setCategories] = useState<string[]>(fallbackCategories)
   // 记录刚提交的手机号，供「查看我的报修 / 查询历史工单」预填
   const [lastPhone, setLastPhone] = useState('')
+
+  // 站点名跟随「系统设置-站点名称」（改名为空时回退原文案）
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: getSettings,
+  })
+  const siteName = settings?.site_name || '工单服务'
 
   const { values, errors, set, getValues, reset, submit } = useFormState<TicketInputValues>(
     { category: '软件问题', name: '', phone: '', content: '' },
@@ -208,7 +217,7 @@ export default function Submit() {
           <div className="mx-auto mb-2 flex size-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
             <ListChecks className="size-6" />
           </div>
-          <CardTitle className="text-xl">工单服务</CardTitle>
+          <CardTitle className="text-xl">{siteName}</CardTitle>
           <CardDescription>提交问题或查询处理进度</CardDescription>
           {/* 分栏切换：提交报修 / 进度查询 */}
           <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">

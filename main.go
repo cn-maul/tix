@@ -4,10 +4,12 @@ import (
 	"context"
 	"embed"
 	"flag"
+	"html"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -194,6 +196,20 @@ func (a *app) spaFallback(w http.ResponseWriter, r *http.Request) {
 	}
 	full := "web/dist/" + rel
 
+	// index.html 不走预压缩分支：需要按「系统设置-站点名称」动态注入 <title>，
+	// 保证浏览器标签页/首屏标题跟随改名（文件极小，压缩收益可忽略）
+	if rel == "index.html" {
+		data, err := webAssets.ReadFile(full)
+		if err != nil {
+			http.Error(w, "前端资源未构建", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		setCache(w, rel)
+		_, _ = w.Write(a.injectSiteTitle(data))
+		return
+	}
+
 	// 优先返回预压缩版本（构建时生成 .br / .gz，零 CPU 开销）
 	if data, ct, ok := servePrecompressed(w, r, full); ok {
 		w.Header().Set("Content-Type", ct)
@@ -223,7 +239,20 @@ func (a *app) spaFallback(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
-	_, _ = w.Write(data)
+	_, _ = w.Write(a.injectSiteTitle(data))
+}
+
+// titleRe 匹配 <title>…</title>，用于注入站点名。
+var titleRe = regexp.MustCompile(`<title>[^<]*</title>`)
+
+// injectSiteTitle 用设置中的站点名替换 index.html 的 <title>；
+// 站点名为空（未配置）时原样返回。
+func (a *app) injectSiteTitle(page []byte) []byte {
+	name, err := getSetting(a.db, "site_name")
+	if err != nil || name == "" {
+		return page
+	}
+	return titleRe.ReplaceAll(page, []byte("<title>"+html.EscapeString(name)+"</title>"))
 }
 
 // servePrecompressed 根据 Accept-Encoding 返回预压缩文件（Brotli 优先）。
