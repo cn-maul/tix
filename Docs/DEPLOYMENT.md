@@ -47,7 +47,7 @@ tix.exe      :: 启动
 | `-addr` | `:8881` | 监听地址（`:` 开头监听全部网卡） |
 | `-db` | `tix.db` | SQLite 数据库文件路径 |
 | `-password` | `admin123` | 初始管理员密码（可用环境变量 `TIX_PASSWORD` 覆盖；仅首次建库生效，之后请在用户管理中改密） |
-| `-trust-proxy` | `false` | 信任反向代理头（`X-Forwarded-For` / `X-Real-IP`）获取客户端真实 IP；**仅在确实部署于反代之后时开启**，直连部署开启会被伪造头绕过限流 |
+| `-trust-proxy` | `false` | 信任反向代理头（`X-Forwarded-For` / `X-Real-IP` / `X-Forwarded-Proto`）获取客户端真实 IP 与协议；**仅在确实部署于反代之后时开启**，直连部署开启会被伪造头绕过限流 |
 | 环境变量 `PORT` | `8881` | 未传 `-addr` 时覆盖端口 |
 | 环境变量 `TIX_PASSWORD` | — | 覆盖 `-password` |
 
@@ -111,7 +111,7 @@ docker run -d -p 8881:8881 -v tix-data:/data --name tix ghcr.io/<owner>/<repo>:l
 | push 标签 `v*` | 同上 + 编译 Linux/Windows 二进制 + 创建 GitHub Release |
 | workflow_dispatch | 手动触发 |
 
-版本号单一来源为 `web/package.json` 的 `version` 字段（设置页显示、镜像 tag 均取自它）。
+版本号单一来源为 `web/package.json` 的 `version` 字段（如 `0.1.0`）：镜像 tag 固定为 `latest` + `v0.1.0`（CI 用 Node 读取该字段拼接）；设置页显示的版本号同样取自它（Vite `define` 注入 `__APP_VERSION__`）。
 
 ### 发布新版本
 
@@ -133,18 +133,22 @@ Actions 自动：构建前端 → 编译 `tix-linux-amd64` / `tix.exe` → 推�
 
 ```nginx
 server {
-    listen 80;
+    listen 443 ssl;
     server_name tix.example.com;
+    # ... ssl_certificate 等 TLS 配置 ...
     location / {
         proxy_pass http://127.0.0.1:8881;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;  # HTTPS 终结于反代时必须传，否则会话 Cookie 不会加 Secure
     }
 }
 ```
 
 启动示例：`./tix -trust-proxy -addr :8881`
+
+> HTTPS 说明：`-trust-proxy` 开启后，当 `X-Forwarded-Proto: https` 时登录 Cookie 自动附加 `Secure` 标记（浏览器仅经 HTTPS 发送）；纯 HTTP 内网部署则不会误加 Secure。Caddy 默认已设置 `X-Forwarded-Proto`，Nginx 需按上面示例显式添加。
 
 ### Caddy
 
@@ -176,9 +180,11 @@ cp tix-backup-20260818.db tix.db
 > 本项目为内网小团队使用，管理端使用**用户名 + 密码登录**（默认账号 `admin` / `admin123`，请务必在「设置 → 用户管理」中修改）。
 > `/submit` 报修页与登录接口公开免密。请勿直接暴露公网；如需外网访问，请用 VPN 或反向代理加鉴权。
 
-- 管理端所有 `/api/*`（除公开接口外）需登录会话（HttpOnly Cookie），会话存于内存，重启即失效
+- 管理端所有 `/api/*`（除公开接口外）需登录会话（HttpOnly + SameSite=Lax Cookie，7 天有效期），会话存于内存（重启即失效），且**每次请求回查用户表**：用户被删除或角色被调整后，其已有会话立即失效
 - 用户密码以 bcrypt 哈希存储，数据库泄露不会直接暴露口令
-- 登录接口限流：同 IP 每分钟最多 10 次；提交接口同 IP 每分钟最多 10 次
+- 登录接口限流：同 IP 每分钟最多 10 次；提交接口同 IP 每分钟最多 10 次（直连部署勿开 `-trust-proxy`，否则可伪造头绕过）
+- 基础安全响应头默认附加：`X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、CSP（资源仅同源加载）、`Referrer-Policy: same-origin`，无需额外配置
+- 设置接口写入白名单：`PUT /api/settings` 仅接受 `site_name`；推送 Token 等敏感配置只能经 `/api/notify/config` 修改
 - 删除分类不会校验是否被工单引用（历史工单保留分类名，统计会保留历史分类）
 
 ## 10. 消息推送（PushPlus）

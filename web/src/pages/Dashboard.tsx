@@ -4,6 +4,7 @@ import { fetchStats } from '../api/stats'
 import { Clock, CheckCircle2, ListPlus, Flame } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import useChart from '@/hooks/useChart'
+import PageSpinner from '@/components/PageSpinner'
 import { useTheme } from '@/lib/theme'
 import type * as echarts from 'echarts/core'
 
@@ -154,13 +155,7 @@ export default function Dashboard() {
   const dayRef = useChart(dayOption)
   const pieRef = useChart(pieOption)
 
-  if (isLoading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <div className="size-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
-      </div>
-    )
-  }
+  if (isLoading) return <PageSpinner />
 
   const total = (data?.pending ?? 0) + (data?.done ?? 0)
 

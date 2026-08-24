@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -67,11 +68,8 @@ func (r *rateLimiter) allow(key string) bool {
 	return true
 }
 
-// submitLimiter 限制 /api/submit 端点：同IP每分钟最多10次。
-var submitLimiter = newRateLimiter(10, time.Minute)
-
-// loginLimiter 限制 /api/login 端点：同IP每分钟最多10次，缓解密码爆破。
-var loginLimiter = newRateLimiter(10, time.Minute)
+// 限流器实例挂在 app 上（见 app.loginLimiter / app.submitLimiter），
+// 每个应用实例独立计数，测试可按实例替换而互不干扰。
 
 // ---------- 数据模型 ----------
 
@@ -80,10 +78,12 @@ type Ticket struct {
 	ID        int64  `json:"id"`
 	Category  string `json:"category"`
 	Content   string `json:"content"`
-	Creator   string `json:"creator"`
-	Status    int    `json:"status"` // 0=待处理 1=已处理
+	Creator   string `json:"creator"` // 发起人姓名
+	Phone     string `json:"phone"`   // 发起人手机号（游客进度查询凭据）
+	Status    int    `json:"status"`  // 0=待处理 1=已处理
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
+	Assignee  string `json:"assignee"` // 负责人用户名，空串=未指派
 }
 
 // Comment 一条处理记录 / 备注。
@@ -142,21 +142,23 @@ type User struct {
 var defaultCategories = []string{"硬件故障", "软件问题", "网络问题", "打印机故障", "其他"}
 
 var defaultCategoryColors = map[string]string{
-	"硬件故障":   "#f59e0b",
-	"软件问题":   "#2563eb",
-	"网络问题":   "#7c3aed",
+	"硬件故障":  "#f59e0b",
+	"软件问题":  "#2563eb",
+	"网络问题":  "#7c3aed",
 	"打印机故障": "#10b981",
-	"其他":      "#6b7280",
+	"其他":    "#6b7280",
 }
 
 // ---------- 应用 ----------
 
-// app 应用依赖：数据库、会话、统一推送。
+// app 应用依赖：数据库、会话、统一推送、请求限流。
 type app struct {
-	db         *sql.DB
-	auth       *authStore
-	notify     *notifier
-	trustProxy bool // -trust-proxy：是否信任反向代理头（XFF/X-Real-IP）
+	db            *sql.DB
+	auth          *authStore
+	notify        *notifier
+	trustProxy    bool         // -trust-proxy：是否信任反向代理头（XFF/X-Real-IP）
+	loginLimiter  *rateLimiter // /api/login 限流：同IP每分钟10次，缓解密码爆破
+	submitLimiter *rateLimiter // /api/submit 限流：同IP每分钟10次
 }
 
 func nowStr() string {
@@ -197,9 +199,11 @@ CREATE TABLE IF NOT EXISTS tickets (
 	category   TEXT    NOT NULL,
 	content    TEXT    NOT NULL,
 	creator    TEXT    NOT NULL,
+	phone      TEXT    NOT NULL DEFAULT '',
 	status     INTEGER NOT NULL DEFAULT 0,
 	created_at TEXT    NOT NULL,
-	updated_at TEXT    NOT NULL
+	updated_at TEXT    NOT NULL,
+	assignee   TEXT    NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
 CREATE TABLE IF NOT EXISTS categories (
@@ -239,7 +243,7 @@ func hasColumn(db *sql.DB, table, col string) (bool, error) {
 	return n > 0, err
 }
 
-// migrateDB 事务化幂等迁移：删除旧版本遗留的 priority 列（已移除优先级设计）、初始化分类种子。
+// migrateDB 事务化幂等迁移：删除旧版遗留 priority 列、补建 assignee 列、初始化分类种子。
 func migrateDB(db *sql.DB) error {
 	has, err := hasColumn(db, "tickets", "priority")
 	if err != nil {
@@ -250,6 +254,41 @@ func migrateDB(db *sql.DB) error {
 		if _, err = db.Exec("ALTER TABLE tickets DROP COLUMN priority"); err != nil {
 			return fmt.Errorf("删除 priority 列失败: %w", err)
 		}
+	}
+
+	// 旧库补建 assignee（负责人）列；initDB 新建的表已含该列，此处幂等
+	hasAssignee, err := hasColumn(db, "tickets", "assignee")
+	if err != nil {
+		return err
+	}
+	if !hasAssignee {
+		log.Printf("[迁移] tickets 补建 assignee 列")
+		if _, err = db.Exec("ALTER TABLE tickets ADD COLUMN assignee TEXT NOT NULL DEFAULT ''"); err != nil {
+			return fmt.Errorf("补建 assignee 列失败: %w", err)
+		}
+	}
+
+	// 旧库补建 phone（发起人手机号）列；initDB 新建的表已含该列，此处幂等
+	hasPhone, err := hasColumn(db, "tickets", "phone")
+	if err != nil {
+		return err
+	}
+	if !hasPhone {
+		log.Printf("[迁移] tickets 补建 phone 列")
+		if _, err = db.Exec("ALTER TABLE tickets ADD COLUMN phone TEXT NOT NULL DEFAULT ''"); err != nil {
+			return fmt.Errorf("补建 phone 列失败: %w", err)
+		}
+	}
+	// 旧数据回填：早期版本把「姓名+手机号」拼在 creator 里，
+	// 此处按尾部 11 位手机号自动拆分（幂等：仅处理 phone 仍为空的行）
+	if err := migrateSplitCreatorPhone(db); err != nil {
+		return err
+	}
+
+	// 旧数据补写完成记录：已处理但没有任何处理记录的工单（旧版标记已处理
+	// 不强制写备注），游客端会显示「暂无处理记录」，补一条系统记录使状态可追溯
+	if err := migrateBackfillDoneRecords(db); err != nil {
+		return err
 	}
 
 	// 分类种子：仅当 categories 表为空时写入固定五类
@@ -284,6 +323,89 @@ func migrateDB(db *sql.DB) error {
 		return err
 	}
 
+	return nil
+}
+
+// legacyPhoneTailRe 匹配 creator 尾部的 11 位大陆手机号（旧版拼接格式）。
+var legacyPhoneTailRe = regexp.MustCompile(`(1[3-9]\d{9})$`)
+
+// migrateSplitCreatorPhone 把旧版「姓名+手机号」拼接的 creator 拆成姓名与 phone 两列。
+// 幂等：只处理 phone 为空的行；拆分后姓名为空（整串即手机号）时保留原 creator 不动。
+func migrateSplitCreatorPhone(db *sql.DB) error {
+	rows, err := db.Query("SELECT id, creator FROM tickets WHERE phone = ''")
+	if err != nil {
+		return err
+	}
+	type pair struct {
+		id         int64
+		newCreator string // 拆分后的姓名；纯手机号行保持原 creator 不变
+		phone      string
+	}
+	var legacy []pair
+	for rows.Next() {
+		var p pair
+		var creator string
+		if err := rows.Scan(&p.id, &creator); err != nil {
+			rows.Close()
+			return err
+		}
+		if m := legacyPhoneTailRe.FindStringSubmatch(creator); m != nil {
+			p.phone = m[1]
+			p.newCreator = strings.TrimSpace(strings.TrimSuffix(creator, m[1]))
+			if p.newCreator == "" {
+				// 整串就是一个手机号：手机号提取到独立列，creator 原样保留（列表仍有显示）
+				p.newCreator = creator
+			}
+			legacy = append(legacy, p)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(legacy) == 0 {
+		return nil
+	}
+	log.Printf("[迁移] 拆分 %d 条旧「姓名+手机号」拼接数据", len(legacy))
+	for _, p := range legacy {
+		if _, err := db.Exec("UPDATE tickets SET creator = ?, phone = ? WHERE id = ?", p.newCreator, p.phone, p.id); err != nil {
+			return fmt.Errorf("回填 phone 失败 (id=%d): %w", p.id, err)
+		}
+	}
+	return nil
+}
+
+// migrateBackfillDoneRecords 给「已处理但没有任何处理记录」的旧工单补一条
+// 系统记录「【已处理完成】」。幂等：补写后工单即拥有记录，不再命中查询。
+func migrateBackfillDoneRecords(db *sql.DB) error {
+	rows, err := db.Query(
+		"SELECT t.id FROM tickets t WHERE t.status = 1 AND " +
+			"NOT EXISTS (SELECT 1 FROM comments c WHERE c.ticket_id = t.id)")
+	if err != nil {
+		return err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	log.Printf("[迁移] 为 %d 条已处理工单补写完成记录", len(ids))
+	for _, id := range ids {
+		if _, _, err := addComment(db, id, "系统", "【已处理完成】"); err != nil {
+			return fmt.Errorf("补写完成记录失败 (id=%d): %w", id, err)
+		}
+	}
 	return nil
 }
 
@@ -397,24 +519,54 @@ func validCategory(db *sql.DB, c string) bool {
 
 // ---------- 工单数据访问 ----------
 
-const ticketCols = "id, category, content, creator, status, created_at, updated_at"
+const ticketCols = "id, category, content, creator, phone, status, created_at, updated_at, assignee"
 
-// listTickets 查询工单：状态/分类/关键词可选；支持分页与排序。
-func listTickets(db *sql.DB, status int, category, keyword string, page, size int, order string) ([]Ticket, int, error) {
+// ticketQuery 工单列表查询条件。
+// From/To 为 YYYY-MM-DD 日期串（含边界日整天）；Assignee 为精确用户名；
+// Unassigned 为真时只查未指派工单（优先于 Assignee）。
+type ticketQuery struct {
+	status     int // -1 = 全部
+	category   string
+	keyword    string
+	from       string
+	to         string
+	assignee   string
+	unassigned bool
+	page       int
+	size       int
+	order      string
+}
+
+// listTickets 按查询条件分页返回工单与总数。
+func listTickets(db *sql.DB, q ticketQuery) ([]Ticket, int, error) {
 	where := []string{}
 	args := []any{}
-	if status >= 0 {
+	if q.status >= 0 {
 		where = append(where, "status = ?")
-		args = append(args, status)
+		args = append(args, q.status)
 	}
-	if category != "" {
+	if q.category != "" {
 		where = append(where, "category = ?")
-		args = append(args, category)
+		args = append(args, q.category)
 	}
-	if keyword != "" {
-		kw := "%" + escapeLike(keyword) + "%"
-		where = append(where, "(content LIKE ? ESCAPE '/' OR creator LIKE ? ESCAPE '/')")
-		args = append(args, kw, kw)
+	if q.keyword != "" {
+		kw := "%" + escapeLike(q.keyword) + "%"
+		where = append(where, "(content LIKE ? ESCAPE '/' OR creator LIKE ? ESCAPE '/' OR phone LIKE ? ESCAPE '/')")
+		args = append(args, kw, kw, kw)
+	}
+	if q.from != "" {
+		where = append(where, "created_at >= ?")
+		args = append(args, q.from+" 00:00:00")
+	}
+	if q.to != "" {
+		where = append(where, "created_at <= ?")
+		args = append(args, q.to+" 23:59:59")
+	}
+	if q.unassigned {
+		where = append(where, "assignee = ''")
+	} else if q.assignee != "" {
+		where = append(where, "assignee = ?")
+		args = append(args, q.assignee)
 	}
 	cond := ""
 	if len(where) > 0 {
@@ -426,9 +578,9 @@ func listTickets(db *sql.DB, status int, category, keyword string, page, size in
 		return nil, 0, err
 	}
 
-	offset := (page - 1) * size
-	rows, err := db.Query("SELECT "+ticketCols+" FROM tickets "+cond+" ORDER BY id "+strings.ToUpper(order)+" LIMIT ? OFFSET ?",
-		append(args, size, offset)...)
+	offset := (q.page - 1) * q.size
+	rows, err := db.Query("SELECT "+ticketCols+" FROM tickets "+cond+" ORDER BY id "+strings.ToUpper(q.order)+" LIMIT ? OFFSET ?",
+		append(args, q.size, offset)...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -436,7 +588,7 @@ func listTickets(db *sql.DB, status int, category, keyword string, page, size in
 	var ts []Ticket
 	for rows.Next() {
 		var t Ticket
-		if err := rows.Scan(&t.ID, &t.Category, &t.Content, &t.Creator, &t.Status, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Category, &t.Content, &t.Creator, &t.Phone, &t.Status, &t.CreatedAt, &t.UpdatedAt, &t.Assignee); err != nil {
 			return nil, 0, err
 		}
 		ts = append(ts, t)
@@ -448,27 +600,69 @@ func listTickets(db *sql.DB, status int, category, keyword string, page, size in
 func getTicket(db *sql.DB, id int64) (*Ticket, error) {
 	t := &Ticket{}
 	err := db.QueryRow("SELECT "+ticketCols+" FROM tickets WHERE id = ?", id).
-		Scan(&t.ID, &t.Category, &t.Content, &t.Creator, &t.Status, &t.CreatedAt, &t.UpdatedAt)
+		Scan(&t.ID, &t.Category, &t.Content, &t.Creator, &t.Phone, &t.Status, &t.CreatedAt, &t.UpdatedAt, &t.Assignee)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	return t, err
 }
 
-func createTicket(db *sql.DB, category, content, creator string) (int64, error) {
+// assignTicket 更新工单负责人（空串表示取消指派）并刷新更新时间。
+func assignTicket(db *sql.DB, id int64, assignee string) error {
+	_, err := db.Exec("UPDATE tickets SET assignee = ?, updated_at = ? WHERE id = ?", assignee, nowStr(), id)
+	return err
+}
+
+// listGuestTickets 游客进度查询：按手机号精确匹配（独立 phone 列），新的在前。
+// limit 封顶返回条数，防止公开接口被拉取全量数据。
+func listGuestTickets(db *sql.DB, phone string, limit int) ([]Ticket, error) {
+	rows, err := db.Query(
+		"SELECT "+ticketCols+" FROM tickets WHERE phone = ? ORDER BY id DESC LIMIT ?",
+		phone, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ts []Ticket
+	for rows.Next() {
+		var t Ticket
+		if err := rows.Scan(&t.ID, &t.Category, &t.Content, &t.Creator, &t.Phone, &t.Status, &t.CreatedAt, &t.UpdatedAt, &t.Assignee); err != nil {
+			return nil, err
+		}
+		ts = append(ts, t)
+	}
+	return ts, rows.Err()
+}
+
+// batchUpdateStatus 批量标记已处理：只影响列表中实际存在的工单，返回受影响行数。
+func batchUpdateStatus(db *sql.DB, ids []int64) (int64, error) {
+	ph := strings.TrimRight(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, nowStr())
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	res, err := db.Exec("UPDATE tickets SET status = 1, updated_at = ? WHERE id IN ("+ph+")", args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func createTicket(db *sql.DB, category, content, name, phone string) (int64, error) {
 	now := nowStr()
 	res, err := db.Exec(
-		"INSERT INTO tickets (category, content, creator, status, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)",
-		category, content, creator, now, now)
+		"INSERT INTO tickets (category, content, creator, phone, status, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)",
+		category, content, name, phone, now, now)
 	if err != nil {
 		return 0, err
 	}
 	return res.LastInsertId()
 }
 
-func updateTicket(db *sql.DB, id int64, category, content, creator string) error {
-	_, err := db.Exec("UPDATE tickets SET category = ?, content = ?, creator = ?, updated_at = ? WHERE id = ?",
-		category, content, creator, nowStr(), id)
+func updateTicket(db *sql.DB, id int64, category, content, name, phone string) error {
+	_, err := db.Exec("UPDATE tickets SET category = ?, content = ?, creator = ?, phone = ?, updated_at = ? WHERE id = ?",
+		category, content, name, phone, nowStr(), id)
 	return err
 }
 
@@ -493,15 +687,82 @@ func deleteTicket(db *sql.DB, id int64) error {
 	return tx.Commit()
 }
 
-// ---------- 备注 / 处理记录 ----------
+// filterExistingTicketIDs 返回 ids 中实际存在的工单 id（保持传入顺序、去重）。
+func filterExistingTicketIDs(db *sql.DB, ids []int64) ([]int64, error) {
+	ph := strings.TrimRight(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, 0, len(ids))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	rows, err := db.Query("SELECT id FROM tickets WHERE id IN ("+ph+")", args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	exist := make(map[int64]bool)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		exist[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]int64, 0, len(exist))
+	seen := make(map[int64]bool)
+	for _, id := range ids {
+		if exist[id] && !seen[id] {
+			out = append(out, id)
+			seen[id] = true
+		}
+	}
+	return out, nil
+}
 
-func addComment(db *sql.DB, ticketID int64, author, content string) (int64, error) {
-	res, err := db.Exec("INSERT INTO comments (ticket_id, author, content, created_at) VALUES (?, ?, ?, ?)",
-		ticketID, author, content, nowStr())
+// batchDeleteTickets 事务批量删除工单及其备注：只删除实际存在的工单，返回受影响行数。
+func batchDeleteTickets(db *sql.DB, ids []int64) (int64, error) {
+	tx, err := db.Begin()
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	ph := strings.TrimRight(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, 0, len(ids))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	if _, err := tx.Exec("DELETE FROM comments WHERE ticket_id IN ("+ph+")", args...); err != nil {
+		_ = tx.Rollback()
+		return 0, err
+	}
+	res, err := tx.Exec("DELETE FROM tickets WHERE id IN ("+ph+")", args...)
+	if err != nil {
+		_ = tx.Rollback()
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, tx.Commit()
+}
+
+// ---------- 备注 / 处理记录 ----------
+
+func addComment(db *sql.DB, ticketID int64, author, content string) (int64, string, error) {
+	created := nowStr()
+	res, err := db.Exec("INSERT INTO comments (ticket_id, author, content, created_at) VALUES (?, ?, ?, ?)",
+		ticketID, author, content, created)
+	if err != nil {
+		return 0, "", err
+	}
+	id, err := res.LastInsertId()
+	return id, created, err
+}
+
+// touchTicket 仅刷新 updated_at：备注等不修改工单正文的操作使用，
+// 避免用请求前的旧值回写覆盖并发的编辑。
+func touchTicket(db *sql.DB, id int64) error {
+	_, err := db.Exec("UPDATE tickets SET updated_at = ? WHERE id = ?", nowStr(), id)
+	return err
 }
 
 func listComments(db *sql.DB, ticketID int64) ([]Comment, error) {
@@ -761,23 +1022,19 @@ func validateUsername(username string) string {
 	return ""
 }
 
-func getUserByUsername(db *sql.DB, username string) (*User, error) {
+// getUserAuth 登录用单次查询：用户信息 + 密码哈希；不存在时返回 (nil, "", nil)。
+func getUserAuth(db *sql.DB, username string) (*User, string, error) {
 	u := &User{}
-	err := db.QueryRow("SELECT id, username, display_name, role, created_at FROM users WHERE username = ?", username).
-		Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.CreatedAt)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	return u, err
-}
-
-func getUserPassword(db *sql.DB, username string) (string, error) {
 	var pw string
-	err := db.QueryRow("SELECT password FROM users WHERE username = ?", username).Scan(&pw)
+	err := db.QueryRow("SELECT id, username, display_name, role, created_at, password FROM users WHERE username = ?", username).
+		Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.CreatedAt, &pw)
 	if err == sql.ErrNoRows {
-		return "", nil
+		return nil, "", nil
 	}
-	return pw, err
+	if err != nil {
+		return nil, "", err
+	}
+	return u, pw, nil
 }
 
 func getUserByID(db *sql.DB, id int64) (*User, error) {

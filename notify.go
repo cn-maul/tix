@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -30,6 +31,9 @@ const (
 	settingPushPlusEnabled = "notify_pushplus_enabled" // "1"/"0"
 	settingPushPlusToken   = "notify_pushplus_token"
 	settingPushPlusTopic   = "notify_pushplus_topic" // 可选群组编码，留空发给本人
+
+	settingServerChanEnabled = "notify_serverchan_enabled" // "1"/"0"
+	settingServerChanSendKey = "notify_serverchan_sendkey"
 )
 
 // publicSettingKeys 公开设置白名单：/api/settings 无需登录，
@@ -77,6 +81,7 @@ func newNotifier() *notifier {
 	}
 	n.channels = []notifyChannel{
 		&pushPlusChannel{hc: n.hc},
+		&serverChanChannel{hc: n.hc},
 		// 后续新渠道在此追加
 	}
 	return n
@@ -192,13 +197,79 @@ func (p *pushPlusChannel) send(db *sql.DB, msg *NotifyMessage) error {
 	return nil
 }
 
-// truncateForLog 截断过长响应，避免日志爆炸。
+// truncateForLog 截断过长响应，避免日志爆炸（按 rune 截断，不切断 UTF-8 字符）。
 func truncateForLog(s string) string {
 	s = strings.TrimSpace(s)
-	if len(s) > 200 {
-		return s[:200] + "…"
+	r := []rune(s)
+	if len(r) > 200 {
+		return string(r[:200]) + "…"
 	}
 	return s
+}
+
+// ====================================================================
+// Server酱 渠道（Turbo 版）
+// 文档：https://sct.ftqq.com/ （POST 表单到 {SENDKEY}.send，code=0 视为成功）
+// ====================================================================
+
+// serverChanAPIBase Server酱 API 地址前缀（运行时拼接 {SENDKEY}.send）。
+// 独立成变量，便于单测替换为本地 httptest 服务。
+var serverChanAPIBase = "https://sctapi.ftqq.com/"
+
+type serverChanChannel struct {
+	hc *http.Client
+}
+
+func (p *serverChanChannel) name() string { return "serverchan" }
+
+func (p *serverChanChannel) configured(db *sql.DB) (bool, error) {
+	cfg, err := loadServerChanSettings(db)
+	if err != nil {
+		return false, err
+	}
+	return cfg.Enabled && cfg.SendKey != "", nil
+}
+
+func (p *serverChanChannel) send(db *sql.DB, msg *NotifyMessage) error {
+	cfg, err := loadServerChanSettings(db)
+	if err != nil {
+		return err
+	}
+	if cfg.SendKey == "" {
+		return errors.New("未配置 SendKey")
+	}
+
+	form := url.Values{}
+	form.Set("title", truncateForLog(msg.Title))
+	form.Set("desp", msg.Content) // Server酱 desp 支持 Markdown
+
+	hc := p.hc
+	if hc == nil {
+		hc = &http.Client{Timeout: 15 * time.Second}
+	}
+	resp, err := hc.PostForm(serverChanAPIBase+cfg.SendKey+".send", form)
+	if err != nil {
+		return fmt.Errorf("请求 Server酱 失败: %w", err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return fmt.Errorf("读取响应失败: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Server酱 返回 HTTP %d: %s", resp.StatusCode, truncateForLog(string(data)))
+	}
+	var sr struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(data, &sr); err != nil {
+		return fmt.Errorf("解析响应失败: %s", truncateForLog(string(data)))
+	}
+	if sr.Code != 0 {
+		return fmt.Errorf("Server酱 错误 code=%d: %s", sr.Code, sr.Message)
+	}
+	return nil
 }
 
 // ---------- 配置读写 ----------
@@ -209,7 +280,7 @@ type notifySettings struct {
 	Topic   string
 }
 
-// loadNotifySettings 从 settings 表读取推送配置（每次实时读取，改动即时生效）。
+// loadNotifySettings 从 settings 表读取 PushPlus 配置（每次实时读取，改动即时生效）。
 func loadNotifySettings(db *sql.DB) (*notifySettings, error) {
 	m, err := getAllSettings(db)
 	if err != nil {
@@ -219,6 +290,24 @@ func loadNotifySettings(db *sql.DB) (*notifySettings, error) {
 		Enabled: m[settingPushPlusEnabled] == "1",
 		Token:   strings.TrimSpace(m[settingPushPlusToken]),
 		Topic:   strings.TrimSpace(m[settingPushPlusTopic]),
+	}, nil
+}
+
+// serverChanSettings Server酱 渠道配置。
+type serverChanSettings struct {
+	Enabled bool
+	SendKey string
+}
+
+// loadServerChanSettings 从 settings 表读取 Server酱 配置（实时读取）。
+func loadServerChanSettings(db *sql.DB) (*serverChanSettings, error) {
+	m, err := getAllSettings(db)
+	if err != nil {
+		return nil, err
+	}
+	return &serverChanSettings{
+		Enabled: m[settingServerChanEnabled] == "1",
+		SendKey: strings.TrimSpace(m[settingServerChanSendKey]),
 	}, nil
 }
 
@@ -241,72 +330,119 @@ func maskToken(s string) string {
 // 管理端接口（仅管理员）
 // ====================================================================
 
-// apiNotifyConfigGet GET /api/notify/config —— 查看推送配置（Token 仅返回脱敏形式）。
+// apiNotifyConfigGet GET /api/notify/config —— 分渠道查看推送配置（密钥仅返回脱敏形式）。
 func (a *app) apiNotifyConfigGet(w http.ResponseWriter, r *http.Request) {
 	if a.requireAdmin(w, r) == nil {
 		return
 	}
-	cfg, err := loadNotifySettings(a.db)
+	pp, err := loadNotifySettings(a.db)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "读取推送配置失败")
+		return
+	}
+	sc, err := loadServerChanSettings(a.db)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "读取推送配置失败")
 		return
 	}
 	jsonResp(w, http.StatusOK, map[string]any{"data": map[string]any{
-		"enabled":      boolToInt(cfg.Enabled),
-		"token_set":    cfg.Token != "",
-		"token_masked": maskToken(cfg.Token),
-		"topic":        cfg.Topic,
+		"pushplus": map[string]any{
+			"enabled":      boolToInt(pp.Enabled),
+			"token_set":    pp.Token != "",
+			"token_masked": maskToken(pp.Token),
+			"topic":        pp.Topic,
+		},
+		"serverchan": map[string]any{
+			"enabled":        boolToInt(sc.Enabled),
+			"sendkey_set":    sc.SendKey != "",
+			"sendkey_masked": maskToken(sc.SendKey),
+		},
 	}})
 }
 
-// apiNotifyConfigUpdate PUT /api/notify/config —— 部分更新推送配置。
-// token 字段出现即生效：传空串清除，不传保持不变。
+// apiNotifyConfigUpdate PUT /api/notify/config —— 按渠道部分更新推送配置。
+// 各字段出现即生效：传空串清除，不传保持不变；未出现的渠道完全不受影响。
 func (a *app) apiNotifyConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if a.requireAdmin(w, r) == nil {
 		return
 	}
 	var body struct {
-		Enabled *int    `json:"enabled"`
-		Token   *string `json:"token"`
-		Topic   *string `json:"topic"`
+		PushPlus *struct {
+			Enabled *int    `json:"enabled"`
+			Token   *string `json:"token"`
+			Topic   *string `json:"topic"`
+		} `json:"pushplus"`
+		ServerChan *struct {
+			Enabled *int    `json:"enabled"`
+			SendKey *string `json:"sendkey"`
+		} `json:"serverchan"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
 		jsonError(w, http.StatusBadRequest, "请求体格式错误")
 		return
 	}
 
-	if body.Enabled != nil {
-		if *body.Enabled != 0 && *body.Enabled != 1 {
-			jsonError(w, http.StatusBadRequest, "enabled 仅支持 0/1")
-			return
+	if body.PushPlus != nil {
+		pp := body.PushPlus
+		if pp.Enabled != nil {
+			if *pp.Enabled != 0 && *pp.Enabled != 1 {
+				jsonError(w, http.StatusBadRequest, "enabled 仅支持 0/1")
+				return
+			}
+			if err := setSetting(a.db, settingPushPlusEnabled, fmt.Sprint(*pp.Enabled)); err != nil {
+				jsonError(w, http.StatusInternalServerError, "保存推送配置失败")
+				return
+			}
 		}
-		if err := setSetting(a.db, settingPushPlusEnabled, fmt.Sprint(*body.Enabled)); err != nil {
-			jsonError(w, http.StatusInternalServerError, "保存推送配置失败")
-			return
+		if pp.Token != nil {
+			token := strings.TrimSpace(*pp.Token)
+			if len(token) > 256 {
+				jsonError(w, http.StatusBadRequest, "Token 过长")
+				return
+			}
+			if err := setSetting(a.db, settingPushPlusToken, token); err != nil {
+				jsonError(w, http.StatusInternalServerError, "保存推送配置失败")
+				return
+			}
+		}
+		if pp.Topic != nil {
+			topic := strings.TrimSpace(*pp.Topic)
+			if len([]rune(topic)) > 64 {
+				jsonError(w, http.StatusBadRequest, "群组编码过长（最多 64 字符）")
+				return
+			}
+			if err := setSetting(a.db, settingPushPlusTopic, topic); err != nil {
+				jsonError(w, http.StatusInternalServerError, "保存推送配置失败")
+				return
+			}
 		}
 	}
-	if body.Token != nil {
-		token := strings.TrimSpace(*body.Token)
-		if len(token) > 256 {
-			jsonError(w, http.StatusBadRequest, "Token 过长")
-			return
+
+	if body.ServerChan != nil {
+		sc := body.ServerChan
+		if sc.Enabled != nil {
+			if *sc.Enabled != 0 && *sc.Enabled != 1 {
+				jsonError(w, http.StatusBadRequest, "enabled 仅支持 0/1")
+				return
+			}
+			if err := setSetting(a.db, settingServerChanEnabled, fmt.Sprint(*sc.Enabled)); err != nil {
+				jsonError(w, http.StatusInternalServerError, "保存推送配置失败")
+				return
+			}
 		}
-		if err := setSetting(a.db, settingPushPlusToken, token); err != nil {
-			jsonError(w, http.StatusInternalServerError, "保存推送配置失败")
-			return
+		if sc.SendKey != nil {
+			key := strings.TrimSpace(*sc.SendKey)
+			if len(key) > 128 {
+				jsonError(w, http.StatusBadRequest, "SendKey 过长")
+				return
+			}
+			if err := setSetting(a.db, settingServerChanSendKey, key); err != nil {
+				jsonError(w, http.StatusInternalServerError, "保存推送配置失败")
+				return
+			}
 		}
 	}
-	if body.Topic != nil {
-		topic := strings.TrimSpace(*body.Topic)
-		if len([]rune(topic)) > 64 {
-			jsonError(w, http.StatusBadRequest, "群组编码过长（最多 64 字符）")
-			return
-		}
-		if err := setSetting(a.db, settingPushPlusTopic, topic); err != nil {
-			jsonError(w, http.StatusInternalServerError, "保存推送配置失败")
-			return
-		}
-	}
+
 	a.apiNotifyConfigGet(w, r) // 返回保存后的最新配置
 }
 
@@ -316,7 +452,7 @@ func (a *app) apiNotifyTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !a.notify.hasConfiguredChannel(a.db) {
-		jsonError(w, http.StatusBadRequest, "请先启用推送并填写 Token")
+		jsonError(w, http.StatusBadRequest, "请先启用至少一个推送渠道并完成配置")
 		return
 	}
 	msg := &NotifyMessage{

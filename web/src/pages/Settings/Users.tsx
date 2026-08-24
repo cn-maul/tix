@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -24,7 +23,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { DataTable, type Column } from '@/components/Table'
 import DeleteConfirm from '@/components/DeleteConfirm'
+import {
+  useFormState,
+  validateUserCreate,
+  validateUserEdit,
+  type UserCreateValues,
+  type UserEditValues,
+} from '@/lib/validation'
 
 export default function Users() {
   const queryClient = useQueryClient()
@@ -88,6 +95,67 @@ export default function Users() {
     }
   }
 
+  // 与 Categories 一致：实体管理统一使用 DataTable 呈现
+  const columns: Column<UserType>[] = [
+    {
+      title: '用户',
+      key: 'display_name',
+      render: (u) => (
+        <div className="flex items-center gap-2">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xs font-medium text-white">
+            {u.display_name.charAt(0)}
+          </div>
+          <span className="font-medium">{u.display_name}</span>
+          <span className="text-sm text-muted-foreground">@{u.username}</span>
+          {u.id === currentUser?.id && (
+            <Badge variant="outline" className="text-xs">我</Badge>
+          )}
+        </div>
+      ),
+    },
+    {
+      title: '角色',
+      key: 'role',
+      width: 120,
+      render: (u) =>
+        u.role === 'admin' ? (
+          <Badge variant="secondary" className="gap-1">
+            <Shield className="size-3" /> 管理员
+          </Badge>
+        ) : (
+          <span className="text-muted-foreground">普通用户</span>
+        ),
+    },
+    { title: '创建时间', key: 'created_at', width: 180 },
+    {
+      title: '操作',
+      key: 'action',
+      width: 110,
+      render: (u) => (
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" onClick={() => setEditing(u)}>
+            <Pencil /> 编辑
+          </Button>
+          <DeleteConfirm
+            title="确认删除"
+            description={`确定要删除用户 "${u.display_name}" 吗？`}
+            trigger={
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                disabled={u.id === currentUser?.id}
+              >
+                <Trash2 />
+              </Button>
+            }
+            onConfirm={() => handleDelete(u.id)}
+          />
+        </div>
+      ),
+    },
+  ]
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -97,59 +165,13 @@ export default function Users() {
         </Button>
       </div>
 
-      {isLoading ? (
-        <div className="flex h-32 items-center justify-center">
-          <div className="size-6 animate-spin rounded-full border-2 border-muted border-t-primary" />
-        </div>
-      ) : (
-        <div className="grid gap-3">
-          {users.map((u) => (
-            <Card key={u.id}>
-              <CardContent className="flex items-center justify-between py-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex size-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-sm font-medium text-white">
-                    {u.display_name.charAt(0)}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{u.display_name}</span>
-                      <span className="text-sm text-muted-foreground">@{u.username}</span>
-                      {u.role === 'admin' && (
-                        <Badge variant="secondary" className="gap-1">
-                          <Shield className="size-3" /> 管理员
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      创建于 {u.created_at}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => setEditing(u)}>
-                    <Pencil className="size-4" />
-                  </Button>
-                  <DeleteConfirm
-                    title="确认删除"
-                    description={`确定要删除用户 "${u.display_name}" 吗？`}
-                    trigger={
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive hover:text-destructive"
-                        disabled={u.id === currentUser?.id}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    }
-                    onConfirm={() => handleDelete(u.id)}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      <DataTable<UserType>
+        columns={columns}
+        dataSource={users}
+        rowKey={(u) => u.id}
+        loading={isLoading}
+        empty="还没有用户"
+      />
 
       <CreateDialog open={showCreate} onOpenChange={setShowCreate} onSubmit={handleCreate} />
       {editing && (
@@ -165,6 +187,12 @@ export default function Users() {
   )
 }
 
+// 表单校验错误行内提示（与全站风格一致；toast 仅用于操作结果）
+function FieldError({ msg }: { msg?: string }) {
+  if (!msg) return null
+  return <p className="text-sm text-destructive">{msg}</p>
+}
+
 function CreateDialog({
   open,
   onOpenChange,
@@ -174,26 +202,20 @@ function CreateDialog({
   onOpenChange: (v: boolean) => void
   onSubmit: (data: { username: string; password: string; display_name: string; role: string }) => void
 }) {
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [displayName, setDisplayName] = useState('')
-  const [role, setRole] = useState('operator')
-  const [loading, setLoading] = useState(false)
+  const [role, setRole] = useState<'operator' | 'admin'>('operator')
 
-  const handleSubmit = async () => {
-    if (!username.trim() || !password.trim() || !displayName.trim()) {
-      toast.error('请填写所有字段')
-      return
-    }
-    setLoading(true)
+  const { values, errors, set, reset, submit } = useFormState<UserCreateValues>(
+    { username: '', password: '', display_name: '' },
+    validateUserCreate,
+  )
+
+  const onFinish = async (v: UserCreateValues) => {
     try {
-      await onSubmit({ username: username.trim(), password, display_name: displayName.trim(), role })
-      setUsername('')
-      setPassword('')
-      setDisplayName('')
+      await onSubmit({ username: v.username.trim(), password: v.password, display_name: v.display_name.trim(), role })
+      reset()
       setRole('operator')
-    } finally {
-      setLoading(false)
+    } catch {
+      /* 错误已由上层 toast */
     }
   }
 
@@ -203,34 +225,39 @@ function CreateDialog({
         <DialogHeader>
           <DialogTitle>新建用户</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 py-2">
+        <form onSubmit={submit(onFinish)} className="space-y-4 py-2">
           <div className="space-y-2">
             <Label htmlFor="new-username">用户名</Label>
             <Input
               id="new-username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="用于登录"
+              value={values.username}
+              onChange={(e) => set('username', e.target.value)}
+              placeholder="用于登录，3-32 位字母/数字/下划线"
+              autoComplete="off"
             />
+            <FieldError msg={errors.username} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="new-password">密码</Label>
             <Input
               id="new-password"
               type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="登录密码"
+              value={values.password}
+              onChange={(e) => set('password', e.target.value)}
+              placeholder="至少 6 位"
+              autoComplete="new-password"
             />
+            <FieldError msg={errors.password} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="new-display-name">显示名称</Label>
             <Input
               id="new-display-name"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
+              value={values.display_name}
+              onChange={(e) => set('display_name', e.target.value)}
               placeholder="中文名或昵称"
             />
+            <FieldError msg={errors.display_name} />
           </div>
           <div className="space-y-2">
             <Label>角色</Label>
@@ -244,15 +271,13 @@ function CreateDialog({
               </SelectContent>
             </Select>
           </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
-          </Button>
-          <Button onClick={handleSubmit} loading={loading}>
-            创建
-          </Button>
-        </DialogFooter>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              取消
+            </Button>
+            <Button type="submit">创建</Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   )
@@ -271,27 +296,19 @@ function EditDialog({
   onOpenChange: (v: boolean) => void
   onSubmit: (data: { display_name: string; role: string; password?: string }) => void
 }) {
-  const [displayName, setDisplayName] = useState(user.display_name)
   const [role, setRole] = useState(user.role)
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
 
-  const handleSubmit = async () => {
-    if (!displayName.trim()) {
-      toast.error('显示名称不能为空')
-      return
-    }
-    setLoading(true)
-    try {
-      await onSubmit({
-        display_name: displayName.trim(),
-        role,
-        password: password.trim() || undefined,
-      })
-      setPassword('')
-    } finally {
-      setLoading(false)
-    }
+  const { values, errors, set, submit } = useFormState<UserEditValues>(
+    { display_name: user.display_name, password: '' },
+    validateUserEdit,
+  )
+
+  const onFinish = async (v: UserEditValues) => {
+    await onSubmit({
+      display_name: v.display_name.trim(),
+      role,
+      password: v.password.trim() || undefined,
+    })
   }
 
   return (
@@ -300,7 +317,7 @@ function EditDialog({
         <DialogHeader>
           <DialogTitle>编辑用户</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 py-2">
+        <form onSubmit={submit(onFinish)} className="space-y-4 py-2">
           <div className="space-y-2">
             <Label>用户名</Label>
             <Input value={user.username} disabled />
@@ -309,9 +326,10 @@ function EditDialog({
             <Label htmlFor="edit-display-name">显示名称</Label>
             <Input
               id="edit-display-name"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
+              value={values.display_name}
+              onChange={(e) => set('display_name', e.target.value)}
             />
+            <FieldError msg={errors.display_name} />
           </div>
           <div className="space-y-2">
             <Label>角色</Label>
@@ -337,20 +355,20 @@ function EditDialog({
             <Input
               id="edit-password"
               type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              value={values.password}
+              onChange={(e) => set('password', e.target.value)}
               placeholder="留空则不修改"
+              autoComplete="new-password"
             />
+            <FieldError msg={errors.password} />
           </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
-          </Button>
-          <Button onClick={handleSubmit} loading={loading}>
-            保存
-          </Button>
-        </DialogFooter>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              取消
+            </Button>
+            <Button type="submit">保存</Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   )

@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Search, Pencil, Trash2, Eye } from 'lucide-react'
-import { fetchList, deleteTicket, ticketNumber, type Ticket } from '../api/tickets'
+import { toast } from 'sonner'
+import { Search, Pencil, Trash2, Eye, Download, CheckCheck } from 'lucide-react'
+import {
+  fetchList,
+  deleteTicket,
+  ticketNumber,
+  batchMarkDone,
+  batchDeleteTickets,
+  exportCsv,
+  type Ticket,
+} from '../api/tickets'
 import { fetchCategories } from '../api/categories'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,21 +25,9 @@ import {
 } from '@/components/ui/select'
 import { DataTable, PaginationBar, type Column } from '@/components/Table'
 import DeleteConfirm from '@/components/DeleteConfirm'
+import StatusBadge from '@/components/StatusBadge'
 
-function StatusBadge({ status }: { status: 0 | 1 }) {
-  return (
-    <Badge
-      variant="secondary"
-      className={
-        status === 0
-          ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400'
-          : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400'
-      }
-    >
-      {status === 0 ? '待处理' : '已处理'}
-    </Badge>
-  )
-}
+type AssigneeFilter = 'all' | 'me' | 'unassigned'
 
 export default function TicketList({ status }: { status: 0 | 1 | '' }) {
   const navigate = useNavigate()
@@ -40,6 +37,12 @@ export default function TicketList({ status }: { status: 0 | 1 | '' }) {
   const [keyword, setKeyword] = useState(urlKeyword)
   const [debounced, setDebounced] = useState(urlKeyword)
   const [category, setCategory] = useState('')
+  const [from, setFrom] = useState(searchParams.get('from') ?? '')
+  const [to, setTo] = useState(searchParams.get('to') ?? '')
+  const [assignee, setAssignee] = useState<AssigneeFilter>('all')
+  const [selected, setSelected] = useState<(string | number)[]>([])
+  const [exporting, setExporting] = useState(false)
+  const [batchDoing, setBatchDoing] = useState(false)
   const [page, setPage] = useState(1)
   const size = 20
 
@@ -47,7 +50,6 @@ export default function TicketList({ status }: { status: 0 | 1 | '' }) {
   const syncedKeywordRef = useRef<string | null>(null)
 
   // 顶栏搜索跳转 /tickets?keyword=… 时同步关键字并回到第一页
-  // （跳过本页防抖后自己写入的值，避免回流覆盖正在输入的文字）
   useEffect(() => {
     if (urlKeyword === syncedKeywordRef.current) return
     setKeyword(urlKeyword)
@@ -81,22 +83,50 @@ export default function TicketList({ status }: { status: 0 | 1 | '' }) {
     setPage(1)
   }, [status])
 
+  // 筛选条件变化后清空多选（选中项可能已不在当前视图）
+  useEffect(() => {
+    setSelected([])
+  }, [status, category, debounced, from, to, assignee, page])
+
   const onKeywordChange = (v: string) => {
     setKeyword(v)
     setPage(1)
   }
 
+  const setDateRange = (nf: string, nt: string) => {
+    setFrom(nf)
+    setTo(nt)
+    setPage(1)
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        if (nf) next.set('from', nf)
+        else next.delete('from')
+        if (nt) next.set('to', nt)
+        else next.delete('to')
+        return next
+      },
+      { replace: true },
+    )
+  }
+
+  // 当前筛选条件（列表与导出共用同一口径）
+  const listParams = useMemo(
+    () => ({
+      status,
+      category: category || undefined,
+      keyword: debounced || undefined,
+      from: from || undefined,
+      to: to || undefined,
+      assignee: assignee === 'me' ? ('me' as const) : undefined,
+      unassigned: assignee === 'unassigned',
+    }),
+    [status, category, debounced, from, to, assignee],
+  )
+
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['tickets', status, category, debounced, page],
-    queryFn: () =>
-      fetchList({
-        status,
-        category: category || undefined,
-        keyword: debounced || undefined,
-        page,
-        size,
-        order: status === 0 ? 'asc' : 'desc',
-      }),
+    queryKey: ['tickets', listParams, page],
+    queryFn: () => fetchList({ ...listParams, page, size, order: status === 0 ? 'asc' : 'desc' }),
   })
 
   const title = status === 0 ? '待处理' : status === 1 ? '已处理' : '全部工单'
@@ -109,6 +139,37 @@ export default function TicketList({ status }: { status: 0 | 1 | '' }) {
     }
     return map
   }, [categories])
+
+  const refreshAfterMutation = () => {
+    refetch()
+    queryClient.invalidateQueries({ queryKey: ['stats'] })
+  }
+
+  const onBatchDone = async () => {
+    setBatchDoing(true)
+    try {
+      const n = await batchMarkDone(selected.map(Number))
+      toast.success(`已标记 ${n} 条为已处理`)
+      refreshAfterMutation()
+    } catch (e: any) {
+      toast.error(e?.message ?? '批量操作失败')
+    } finally {
+      setBatchDoing(false)
+    }
+  }
+
+  const onExport = async () => {
+    setExporting(true)
+    try {
+      const truncated = await exportCsv(listParams)
+      if (truncated) toast.warning('超过 10 万条，导出已截断，请缩小筛选范围')
+      else toast.success('已导出 CSV')
+    } catch (e: any) {
+      toast.error(e?.message ?? '导出失败')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const columns: Column<Ticket>[] = useMemo(() => [
     {
@@ -130,18 +191,27 @@ export default function TicketList({ status }: { status: 0 | 1 | '' }) {
     {
       title: '发起人',
       key: 'creator',
-      width: 170,
+      width: 150,
       render: (r: Ticket) => (
-        <span className="block max-w-[170px] truncate" title={r.creator}>
-          {r.creator}
-        </span>
+        <div className="min-w-0">
+          {/* 第一行：姓名；第二行：手机号（旧数据可能为空） */}
+          <div className="max-w-[150px] truncate" title={r.creator}>
+            {r.creator}
+          </div>
+          <div
+            className="font-mono text-xs tabular-nums text-muted-foreground"
+            title={r.phone || undefined}
+          >
+            {r.phone || '—'}
+          </div>
+        </div>
       ),
     },
     {
       title: '内容',
       key: 'content',
       render: (r: Ticket) => (
-        <span className="block max-w-[320px] truncate text-muted-foreground" title={r.content}>
+        <span className="block max-w-[280px] truncate text-muted-foreground" title={r.content}>
           {r.content}
         </span>
       ),
@@ -156,6 +226,17 @@ export default function TicketList({ status }: { status: 0 | 1 | '' }) {
           },
         ]
       : []),
+    {
+      title: '负责人',
+      key: 'assignee',
+      width: 100,
+      render: (r: Ticket) =>
+        r.assignee ? (
+          <span className="truncate" title={r.assignee}>{r.assignee}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
     { title: '创建时间', key: 'created_at', width: 160 },
     {
       title: '操作',
@@ -183,14 +264,16 @@ export default function TicketList({ status }: { status: 0 | 1 | '' }) {
             }
             onConfirm={async () => {
               await deleteTicket(r.id)
-              refetch()
+              // 删除的是当前页最后一条且不在第一页时，回退一页避免停留在空页码
+              if ((data?.items?.length ?? 0) === 1 && page > 1) setPage(page - 1)
+              else refetch()
               queryClient.invalidateQueries({ queryKey: ['stats'] })
             }}
           />
         </div>
       ),
     },
-  ], [status, catColor, navigate, refetch, queryClient])
+  ], [status, catColor, navigate, refetch, queryClient, data, page, setPage])
 
   return (
     <div className="space-y-4">
@@ -204,7 +287,7 @@ export default function TicketList({ status }: { status: 0 | 1 | '' }) {
               setPage(1)
             }}
           >
-            <SelectTrigger className="w-36">
+            <SelectTrigger className="w-32">
               <SelectValue placeholder="全部分类" />
             </SelectTrigger>
             <SelectContent>
@@ -216,17 +299,91 @@ export default function TicketList({ status }: { status: 0 | 1 | '' }) {
               ))}
             </SelectContent>
           </Select>
+          <div className="flex items-center gap-1.5">
+            <Input
+              type="date"
+              className="w-[9.5rem]"
+              aria-label="创建日期起"
+              value={from}
+              onChange={(e) => setDateRange(e.target.value, to)}
+            />
+            <span className="text-xs text-muted-foreground">至</span>
+            <Input
+              type="date"
+              className="w-[9.5rem]"
+              aria-label="创建日期止"
+              value={to}
+              onChange={(e) => setDateRange(from, e.target.value)}
+            />
+          </div>
+          <Select
+            value={assignee}
+            onValueChange={(v) => {
+              setAssignee(v as AssigneeFilter)
+              setPage(1)
+            }}
+          >
+            <SelectTrigger className="w-32">
+              <SelectValue placeholder="负责人" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部负责人</SelectItem>
+              <SelectItem value="unassigned">未指派</SelectItem>
+              <SelectItem value="me">我负责的</SelectItem>
+            </SelectContent>
+          </Select>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              className="w-56 pl-8"
-              placeholder="搜索内容 / 发起人"
+              className="w-48 pl-8"
+              placeholder="搜索内容 / 发起人 / 手机号"
               value={keyword}
               onChange={(e) => onKeywordChange(e.target.value)}
             />
           </div>
+          <Button variant="outline" onClick={onExport} loading={exporting}>
+            {!exporting && <Download />}
+            导出 CSV
+          </Button>
         </div>
       </div>
+
+      {selected.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/50 px-4 py-2.5">
+          <span className="text-sm">已选 {selected.length} 条</span>
+          {status !== 1 && (
+            <Button size="sm" onClick={onBatchDone} loading={batchDoing}>
+              {!batchDoing && <CheckCheck />}
+              标记已处理
+            </Button>
+          )}
+          <DeleteConfirm
+            title="批量删除"
+            description={`确定要删除选中的 ${selected.length} 条工单吗？其处理记录将一并删除。`}
+            trigger={
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+              >
+                <Trash2 /> 删除
+              </Button>
+            }
+            onConfirm={async () => {
+              try {
+                const n = await batchDeleteTickets(selected.map(Number))
+                toast.success(`已删除 ${n} 条工单`)
+                refreshAfterMutation()
+              } catch (e: any) {
+                toast.error(e?.message ?? '批量删除失败')
+              }
+            }}
+          />
+          <Button variant="ghost" size="sm" onClick={() => setSelected([])}>
+            取消选择
+          </Button>
+        </div>
+      )}
 
       <DataTable<Ticket>
         columns={columns}
@@ -234,6 +391,9 @@ export default function TicketList({ status }: { status: 0 | 1 | '' }) {
         rowKey={(r) => r.id}
         loading={isLoading}
         empty="没有符合条件的工单"
+        selectable
+        selectedKeys={selected}
+        onSelectedChange={setSelected}
       />
 
       <PaginationBar

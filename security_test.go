@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -13,13 +14,9 @@ import (
 // ======================================================================
 
 func TestLoginRateLimit(t *testing.T) {
-	// 替换全局限流器（小阈值），避免影响其他用例
-	old := loginLimiter
-	loginLimiter = newRateLimiter(3, time.Minute)
-	t.Cleanup(func() { loginLimiter = old })
-
 	a := newTestApp(t)
-	a.auth = newAuthStore()
+	// 换用小阈值限流器，避免影响其他用例
+	a.loginLimiter = newRateLimiter(3, time.Minute)
 	h := a.authMiddleware(a.routes())
 	if _, err := createUser(a.db, "limuser", "secret123", "限流用户", "operator"); err != nil {
 		t.Fatalf("createUser: %v", err)
@@ -39,7 +36,7 @@ func TestLoginRateLimit(t *testing.T) {
 }
 
 // ======================================================================
-// 密码哈希：创建即哈希 + 存量明文登录时透明升级 + 启动迁移
+// 密码哈希：创建即哈希 + 存量明文由启动迁移升级
 // ======================================================================
 
 func TestPasswordStoredHashed(t *testing.T) {
@@ -47,36 +44,39 @@ func TestPasswordStoredHashed(t *testing.T) {
 	if _, err := createUser(a.db, "hashuser", "secret123", "哈希用户", "operator"); err != nil {
 		t.Fatalf("createUser: %v", err)
 	}
-	stored, _ := getUserPassword(a.db, "hashuser")
+	_, stored, _ := getUserAuth(a.db, "hashuser")
 	if !strings.HasPrefix(stored, "$2") {
 		t.Fatalf("password should be bcrypt-hashed, got %.10q", stored)
 	}
-	if ok, rehash := checkPassword(stored, "secret123"); !ok || rehash {
-		t.Fatalf("checkPassword(ok=%v rehash=%v) want true/false", ok, rehash)
+	if !checkPassword(stored, "secret123") {
+		t.Fatal("checkPassword should match correct password")
 	}
-	if ok, _ := checkPassword(stored, "wrong"); ok {
+	if checkPassword(stored, "wrong") {
 		t.Fatal("wrong password should not match")
 	}
 }
 
-func TestLegacyPlaintextUpgradeOnLogin(t *testing.T) {
+func TestLegacyPlaintextLoginAfterMigration(t *testing.T) {
 	a := newTestApp(t)
 	a.auth = newAuthStore()
 	h := a.authMiddleware(a.routes())
-	// 模拟旧版本遗留的明文密码行
+	// 模拟旧版本遗留的明文密码行（newTestApp 已跑过一次迁移，此处补跑覆盖新行）
 	if _, err := a.db.Exec(
 		"INSERT INTO users (username, password, display_name, role, created_at) VALUES (?, ?, ?, ?, ?)",
 		"legacy", "oldplain", "旧用户", "operator", nowStr()); err != nil {
 		t.Fatalf("seed legacy user: %v", err)
 	}
+	if err := migrateDB(a.db); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
 
-	// 正确的旧密码可登录，且登录后自动升级为 bcrypt
+	// 启动迁移已将明文升级为 bcrypt，旧密码可正常登录
+	_, stored, _ := getUserAuth(a.db, "legacy")
+	if !strings.HasPrefix(stored, "$2") {
+		t.Fatalf("legacy plaintext should be migrated to bcrypt at startup, got %.10q", stored)
+	}
 	rr := postJSON(t, h, "/api/login", map[string]string{"username": "legacy", "password": "oldplain"})
 	requireStatus(t, rr, http.StatusOK)
-	stored, _ := getUserPassword(a.db, "legacy")
-	if !strings.HasPrefix(stored, "$2") {
-		t.Fatalf("legacy plaintext should be rehashed on login, got %.10q", stored)
-	}
 
 	// 错误密码仍 401
 	rr = postJSON(t, h, "/api/login", map[string]string{"username": "legacy", "password": "nope"})
@@ -96,20 +96,20 @@ func TestMigratePlaintextPasswordsIdempotent(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 	for _, u := range []struct{ name, pw string }{{"p1", "alpha123"}, {"p2", "beta123"}} {
-		stored, _ := getUserPassword(a.db, u.name)
+		_, stored, _ := getUserAuth(a.db, u.name)
 		if !strings.HasPrefix(stored, "$2") {
 			t.Fatalf("%s not migrated: %.10q", u.name, stored)
 		}
-		if ok, _ := checkPassword(stored, u.pw); !ok {
+		if !checkPassword(stored, u.pw) {
 			t.Fatalf("%s password broken after migration", u.name)
 		}
 	}
 	// 幂等：再次迁移不报错且哈希不变
-	before, _ := getUserPassword(a.db, "p1")
+	_, before, _ := getUserAuth(a.db, "p1")
 	if err := migrateDB(a.db); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	after, _ := getUserPassword(a.db, "p1")
+	_, after, _ := getUserAuth(a.db, "p1")
 	if before != after {
 		t.Fatal("re-migrate should not rewrite hashes")
 	}
@@ -204,11 +204,6 @@ func TestSelfUpdateAllowedExceptRole(t *testing.T) {
 // ======================================================================
 
 func TestPasswordChangeRevokesSessions(t *testing.T) {
-	// 独立限流器，避免与其他用例共享计数
-	old := loginLimiter
-	loginLimiter = newRateLimiter(1000, time.Minute)
-	t.Cleanup(func() { loginLimiter = old })
-
 	a := newTestApp(t)
 	a.auth = newAuthStore()
 	h := a.authMiddleware(a.routes())
@@ -313,5 +308,162 @@ func TestRateLimiterSweep(t *testing.T) {
 	}
 	if len(rl.requests) > maxRateKeys {
 		t.Fatalf("sweep did not shrink map: %d keys left", len(rl.requests))
+	}
+}
+
+// ======================================================================
+// 删除用户后其已有会话立即失效（requireAuth 回查数据库 + revokeUser 双保险）
+// ======================================================================
+
+func TestDeleteUserRevokesSessions(t *testing.T) {
+	a := newTestApp(t)
+	a.auth = newAuthStore()
+	h := a.authMiddleware(a.routes())
+	if _, err := createUser(a.db, "deladmin", "secret123", "删除管理员", "admin"); err != nil {
+		t.Fatalf("createUser: %v", err)
+	}
+	if _, err := createUser(a.db, "victim", "secret123", "被删用户", "operator"); err != nil {
+		t.Fatalf("createUser: %v", err)
+	}
+	cA := loginAs(t, h, "deladmin", "secret123")
+	cV := loginAs(t, h, "victim", "secret123")
+
+	// 删除前会话有效
+	rr := reqWithCookie(t, h, http.MethodGet, "/api/stats", nil, cV)
+	requireStatus(t, rr, http.StatusOK)
+
+	// 管理员删除 victim
+	rr = reqWithCookie(t, h, http.MethodGet, "/api/users", nil, cA)
+	requireStatus(t, rr, http.StatusOK)
+	var ul struct {
+		Data []User `json:"data"`
+	}
+	json.NewDecoder(rr.Body).Decode(&ul)
+	var victimID int64
+	for _, u := range ul.Data {
+		if u.Username == "victim" {
+			victimID = u.ID
+		}
+	}
+	if victimID == 0 {
+		t.Fatal("victim not found")
+	}
+	req := httptest.NewRequest(http.MethodDelete, "/api/users/"+intToString(victimID), nil)
+	req.AddCookie(cA)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	requireStatus(t, rr, http.StatusOK)
+
+	// 删除后：旧会话立即失效
+	rr = reqWithCookie(t, h, http.MethodGet, "/api/stats", nil, cV)
+	requireStatus(t, rr, http.StatusUnauthorized)
+	// auth/status 也不应再返回 ok:true
+	rr = reqWithCookie(t, h, http.MethodGet, "/api/auth/status", nil, cV)
+	requireStatus(t, rr, http.StatusOK)
+	var st struct {
+		Data struct {
+			OK bool `json:"ok"`
+		} `json:"data"`
+	}
+	json.NewDecoder(rr.Body).Decode(&st)
+	if st.Data.OK {
+		t.Fatal("deleted user auth/status should be ok=false")
+	}
+}
+
+// ======================================================================
+// 角色降级立即生效：降级后的旧会话不再拥有管理员权限
+// ======================================================================
+
+func TestRoleDemotionTakesEffect(t *testing.T) {
+	a := newTestApp(t)
+	a.auth = newAuthStore()
+	h := a.authMiddleware(a.routes())
+	if _, err := createUser(a.db, "boss", "secret123", "管理员", "admin"); err != nil {
+		t.Fatalf("createUser boss: %v", err)
+	}
+	if _, err := createUser(a.db, "helper", "secret123", "副手", "admin"); err != nil {
+		t.Fatalf("createUser helper: %v", err)
+	}
+	cBoss := loginAs(t, h, "boss", "secret123")
+	cHelper := loginAs(t, h, "helper", "secret123")
+
+	rr := reqWithCookie(t, h, http.MethodGet, "/api/users", nil, cBoss)
+	requireStatus(t, rr, http.StatusOK)
+	var ul struct {
+		Data []User `json:"data"`
+	}
+	json.NewDecoder(rr.Body).Decode(&ul)
+	var helperID int64
+	for _, u := range ul.Data {
+		if u.Username == "helper" {
+			helperID = u.ID
+		}
+	}
+	if helperID == 0 {
+		t.Fatal("helper not found")
+	}
+
+	// 降级前：helper 会话可访问管理接口
+	rr = reqWithCookie(t, h, http.MethodGet, "/api/users", nil, cHelper)
+	requireStatus(t, rr, http.StatusOK)
+
+	// 管理员把 helper 降级为 operator（不改密码、不显式吊销会话）
+	rr = reqWithCookie(t, h, http.MethodPut, "/api/users/"+intToString(helperID),
+		map[string]any{"display_name": "副手", "role": "operator"}, cBoss)
+	requireStatus(t, rr, http.StatusOK)
+
+	// 降级立即生效：用户列表对所有登录用户开放（供指派取人），但
+	// 管理员写操作（如创建用户）→ 403；普通接口仍可用
+	rr = reqWithCookie(t, h, http.MethodGet, "/api/users", nil, cHelper)
+	requireStatus(t, rr, http.StatusOK)
+	rr = reqWithCookie(t, h, http.MethodPost, "/api/users",
+		map[string]any{"username": "nope", "password": "secret123", "display_name": "x", "role": "operator"}, cHelper)
+	requireStatus(t, rr, http.StatusForbidden)
+	rr = reqWithCookie(t, h, http.MethodGet, "/api/stats", nil, cHelper)
+	requireStatus(t, rr, http.StatusOK)
+}
+
+// ======================================================================
+// 设置接口键白名单：非白名单键拒绝，site_name 长度限制
+// ======================================================================
+
+func TestSettingsWhitelist(t *testing.T) {
+	a := newTestApp(t)
+	a.auth = newAuthStore()
+	h := a.authMiddleware(a.routes())
+	if _, err := createUser(a.db, "setadmin", "secret123", "设置管理员", "admin"); err != nil {
+		t.Fatalf("createUser: %v", err)
+	}
+	c := loginAs(t, h, "setadmin", "secret123")
+
+	// 白名单外键 → 400
+	rr := reqWithCookie(t, h, http.MethodPut, "/api/settings", map[string]string{"unknown_key": "x"}, c)
+	requireStatus(t, rr, http.StatusBadRequest)
+	// 白名单内键 → 200
+	rr = reqWithCookie(t, h, http.MethodPut, "/api/settings", map[string]string{"site_name": "运维中心"}, c)
+	requireStatus(t, rr, http.StatusOK)
+	// site_name 超长 → 400
+	rr = reqWithCookie(t, h, http.MethodPut, "/api/settings", map[string]string{"site_name": strings.Repeat("长", 40)}, c)
+	requireStatus(t, rr, http.StatusBadRequest)
+}
+
+// ======================================================================
+// 基础安全响应头
+// ======================================================================
+
+func TestSecurityHeaders(t *testing.T) {
+	a := newTestApp(t)
+	h := securityHeaders(a.routes())
+	rr := getJSON(t, h, "/api/health")
+	requireStatus(t, rr, http.StatusOK)
+	if rr.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatal("missing X-Content-Type-Options")
+	}
+	if rr.Header().Get("X-Frame-Options") != "DENY" {
+		t.Fatal("missing X-Frame-Options")
+	}
+	if rr.Header().Get("Content-Security-Policy") == "" {
+		t.Fatal("missing CSP")
 	}
 }

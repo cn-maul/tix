@@ -11,15 +11,19 @@ import {
   getNotifyConfig,
   updateNotifyConfig,
   testNotify,
-  type NotifyResult,
+  type NotifyConfig,
+  type NotifyConfigUpdate,
 } from '@/api/notifications'
 
 export default function Notifications() {
   const queryClient = useQueryClient()
-  const [enabled, setEnabled] = useState(false)
-  const [token, setToken] = useState('')
-  const [topic, setTopic] = useState('')
-  const [savedTopic, setSavedTopic] = useState('')
+  // PushPlus
+  const [ppEnabled, setPpEnabled] = useState(false)
+  const [ppToken, setPpToken] = useState('')
+  const [ppTopic, setPpTopic] = useState('')
+  // Server酱
+  const [scEnabled, setScEnabled] = useState(false)
+  const [scKey, setScKey] = useState('')
 
   const { data: cfg, isLoading } = useQuery({
     queryKey: ['notify-config'],
@@ -28,114 +32,190 @@ export default function Notifications() {
 
   useEffect(() => {
     if (cfg) {
-      setEnabled(cfg.enabled === 1)
-      setToken('')
-      setTopic(cfg.topic || '')
-      setSavedTopic(cfg.topic || '')
+      setPpEnabled(cfg.pushplus.enabled === 1)
+      setPpToken('')
+      setPpTopic(cfg.pushplus.topic || '')
+      setScEnabled(cfg.serverchan.enabled === 1)
+      setScKey('')
     }
   }, [cfg])
 
-  // 是否有未保存的修改：开关、群组编码，或输入了新 Token
-  const savedEnabled = cfg?.enabled === 1
-  const dirty =
-    !!cfg && (enabled !== savedEnabled || token.trim() !== '' || topic.trim() !== savedTopic)
+  // 是否有未保存的修改（任一渠道）
+  const saved = cfg as NotifyConfig | undefined
+  const ppDirty =
+    !!saved &&
+    (ppEnabled !== (saved.pushplus.enabled === 1) ||
+      ppToken.trim() !== '' ||
+      ppTopic.trim() !== saved.pushplus.topic)
+  const scDirty =
+    !!saved && (scEnabled !== (saved.serverchan.enabled === 1) || scKey.trim() !== '')
+  const dirty = ppDirty || scDirty
 
   const save = async () => {
+    if (!saved) return
     try {
-      await updateNotifyConfig({
-        enabled: enabled ? 1 : 0,
-        ...(token.trim() !== '' ? { token: token.trim() } : {}),
-        topic: topic.trim(),
-      })
-      setToken('')
-      setSavedTopic(topic.trim())
+      const body: NotifyConfigUpdate = {}
+      if (ppDirty) {
+        body.pushplus = {
+          enabled: ppEnabled ? 1 : 0,
+          topic: ppTopic.trim(),
+          ...(ppToken.trim() ? { token: ppToken.trim() } : {}),
+        }
+      }
+      if (scDirty) {
+        body.serverchan = {
+          enabled: scEnabled ? 1 : 0,
+          ...(scKey.trim() ? { sendkey: scKey.trim() } : {}),
+        }
+      }
+      await updateNotifyConfig(body)
+      setPpToken('')
+      setScKey('')
       queryClient.invalidateQueries({ queryKey: ['notify-config'] })
       toast.success('已保存')
     } catch (e: any) {
-      toast.error(e.message || '保存失败')
+      toast.error(e?.message || '保存失败')
     }
   }
 
   const sendTest = async () => {
     try {
-      const results: NotifyResult[] = await testNotify()
+      const results = await testNotify()
       if (results.length > 0 && results.every((r) => r.ok)) {
-        toast.success('测试消息已发送，请到微信查收')
+        toast.success(`测试消息已发送至 ${results.length} 个已启用渠道`)
       } else {
         const failed = results.filter((r) => !r.ok)
         toast.error(failed.map((r) => `${r.channel}：${r.error || '发送失败'}`).join('；') || '发送失败')
       }
     } catch (e: any) {
-      toast.error(e.message || '发送失败')
+      toast.error(e?.message || '发送失败')
     }
   }
 
-  const canTest = enabled && cfg?.token_set
+  const anyChannelReady =
+    (ppEnabled && (saved?.pushplus.token_set || ppToken.trim() !== '')) ||
+    (scEnabled && (saved?.serverchan.sendkey_set || scKey.trim() !== ''))
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">消息推送</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold">消息推送</h1>
+        <div className="flex items-center gap-3">
+          <Button onClick={save} disabled={!dirty}>
+            保存全部
+          </Button>
+          <Button variant="outline" onClick={sendTest} disabled={!anyChannelReady || isLoading}>
+            <SendHorizonal className="size-4" />
+            发送测试消息
+          </Button>
+        </div>
+      </div>
+      {!anyChannelReady && (
+        <p className="text-xs text-muted-foreground">
+          启用至少一个渠道并完成配置后，可发送测试消息验证通道。
+        </p>
+      )}
+
+      {/* PushPlus */}
       <Card>
         <CardHeader>
           <CardTitle>推送渠道 · PushPlus</CardTitle>
           <CardDescription>
-            通过 PushPlus（pushplus.plus）把通知推送到微信。在
+            通过{' '}
             <a
               href="https://www.pushplus.plus/"
               target="_blank"
               rel="noreferrer"
-              className="mx-1 text-primary underline underline-offset-2"
+              className="text-primary underline underline-offset-2"
             >
               pushplus.plus
-            </a>
-            微信扫码登录后即可免费获取 Token。
+            </a>{' '}
+            把通知推送到微信。微信扫码登录后即可免费获取 Token。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div className="space-y-0.5">
-              <Label htmlFor="notify-enabled">启用推送</Label>
-              <p className="text-xs text-muted-foreground">关闭后将不发送任何推送（当前支持手动发送测试消息验证通道）</p>
+              <Label htmlFor="pp-enabled">启用渠道</Label>
+              <p className="text-xs text-muted-foreground">关闭后该渠道不发送任何消息</p>
             </div>
-            <Switch id="notify-enabled" checked={enabled} onCheckedChange={setEnabled} disabled={isLoading} />
+            <Switch id="pp-enabled" checked={ppEnabled} onCheckedChange={setPpEnabled} disabled={isLoading} />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="notify-token">PushPlus Token</Label>
+            <Label htmlFor="pp-token">PushPlus Token</Label>
             <Input
-              id="notify-token"
+              id="pp-token"
               type="password"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder={cfg?.token_set ? `已保存（${cfg.token_masked}），留空则不修改` : '在 pushplus.plus 获取'}
+              value={ppToken}
+              onChange={(e) => setPpToken(e.target.value)}
+              placeholder={
+                saved?.pushplus.token_set
+                  ? `已保存（${saved.pushplus.token_masked}），留空则不修改`
+                  : '在 pushplus.plus 获取'
+              }
               autoComplete="new-password"
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="notify-topic">群组编码（可选）</Label>
+            <Label htmlFor="pp-topic">群组编码（可选）</Label>
             <Input
-              id="notify-topic"
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
+              id="pp-topic"
+              value={ppTopic}
+              onChange={(e) => setPpTopic(e.target.value)}
               placeholder="留空发送给 Token 本人；填写后推送给该群组全部成员"
               maxLength={64}
             />
             <p className="text-xs text-muted-foreground">群组需已在 PushPlus 完成成员配对</p>
           </div>
+        </CardContent>
+      </Card>
 
-          <div className="flex items-center gap-3">
-            <Button onClick={save} disabled={!dirty}>
-              保存
-            </Button>
-            <Button variant="outline" onClick={sendTest} disabled={!canTest || isLoading}>
-              <SendHorizonal className="size-4" />
-              发送测试消息
-            </Button>
+      {/* Server酱 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>推送渠道 · Server酱</CardTitle>
+          <CardDescription>
+            通过{' '}
+            <a
+              href="https://sct.ftqq.com/"
+              target="_blank"
+              rel="noreferrer"
+              className="text-primary underline underline-offset-2"
+            >
+              sct.ftqq.com
+            </a>{' '}
+            推送消息到微信 / 企业微信。在官网微信扫码登录后复制 SendKey 填入。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="sc-enabled">启用渠道</Label>
+              <p className="text-xs text-muted-foreground">关闭后该渠道不发送任何消息</p>
+            </div>
+            <Switch id="sc-enabled" checked={scEnabled} onCheckedChange={setScEnabled} disabled={isLoading} />
           </div>
-          {!canTest && (
-            <p className="text-xs text-muted-foreground">启用推送并保存 Token 后可发送测试消息验证通道。</p>
-          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="sc-key">Server酱 SendKey</Label>
+            <Input
+              id="sc-key"
+              type="password"
+              value={scKey}
+              onChange={(e) => setScKey(e.target.value)}
+              placeholder={
+                saved?.serverchan.sendkey_set
+                  ? `已保存（${saved.serverchan.sendkey_masked}），留空则不修改`
+                  : '形如 SCTxxxx 的 SendKey'
+              }
+              autoComplete="new-password"
+            />
+            <p className="text-xs text-muted-foreground">
+              SendKey 等同于账号凭据，请勿泄露；服务端仅以脱敏形式回显
+            </p>
+          </div>
         </CardContent>
       </Card>
     </div>

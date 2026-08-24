@@ -6,7 +6,7 @@
 |------|------|------|
 | Go | 1.25+（`go.mod` 为 1.25，CI 用 1.26） | 后端 |
 | Node.js | 18+ | 构建前端 |
-| pnpm | 9（`packageManager: pnpm@9.15.0`） | 前端依赖管理 |
+| pnpm | 11（`packageManager: pnpm@11.10.0`，Dockerfile/CI 同步使用） | 前端依赖管理 |
 
 无需 CGO（`modernc.org/sqlite` 纯 Go 驱动）。
 
@@ -21,6 +21,7 @@ tix/
 ├── notify.go             # 统一推送模块：消息模型、渠道抽象、PushPlus 渠道、推送配置接口
 ├── handlers_test.go      # JSON API 端到端测试
 ├── notify_test.go        # 推送配置/渠道/测试端点测试
+├── security_test.go      # 安全回归：限流/密码哈希/会话吊销/设置白名单/安全头
 ├── go.mod / go.sum       # module tix；唯一直接依赖 modernc.org/sqlite（纯 Go，免 CGO）
 │
 ├── web/                  # React 前端（构建产物 web/dist 由 embed 打进二进制）
@@ -67,7 +68,7 @@ go test -v -run TestTicketFlow    # 指定用例
 
 测试使用 `t.TempDir()` 创建临时数据库，各用例独立，互不影响。
 
-### 3.3 测试覆盖（handlers_test.go）
+### 3.3 测试覆盖（handlers_test.go / notify_test.go / security_test.go，共 33 个用例）
 
 | 用例 | 覆盖内容 |
 |------|----------|
@@ -91,6 +92,18 @@ go test -v -run TestTicketFlow    # 指定用例
 | `TestMaskToken` | Token 脱敏规则（短串全星号，长串保留首 2 末 4） |
 | `TestPushPlusChannelSend` | PushPlus 渠道请求体断言、业务错误码失败路径、未启用不发送（本地 httptest 假服务） |
 | `TestNotifyTestEndpoint` | 测试推送：未配置 → 400；配置后返回渠道成功结果 |
+| `TestLoginRateLimit` | 登录限流：同 IP 3 次后 429 |
+| `TestPasswordStoredHashed` | 创建用户即存 bcrypt 哈希，错误密码不匹配 |
+| `TestLegacyPlaintextUpgradeOnLogin` | 旧明文密码登录成功即升级 bcrypt |
+| `TestMigratePlaintextPasswordsIdempotent` | 启动迁移明文→bcrypt，幂等（哈希不变） |
+| `TestSelfUpdateAllowedExceptRole` | 可改自己显示名/密码，不能改自己角色 |
+| `TestPasswordChangeRevokesSessions` | 改密后该用户全部会话立即失效 |
+| `TestTicketNumberFormat` | 工单编号 `T-YYYYMMDD-NNNN` 格式 |
+| `TestRateLimiterSweep` | 限流器 key 总数超阈值自动清扫，防内存无界增长 |
+| `TestDeleteUserRevokesSessions` | 删除用户后其已有会话立即失效（含 auth/status 不再 ok） |
+| `TestRoleDemotionTakesEffect` | 角色降级立即生效：旧会话失去管理权限 |
+| `TestSettingsWhitelist` | 设置接口键白名单：非白名单键 400、site_name 超长 400 |
+| `TestSecurityHeaders` | 基础安全响应头（nosniff / X-Frame-Options / CSP） |
 
 ## 4. 前端开发
 
@@ -119,12 +132,16 @@ pnpm --dir web build              # tsc -b（类型检查）+ vite build → web
 | 文件 | 说明 |
 |------|------|
 | `src/App.tsx` | 主题（localStorage `tix.dark`）、QueryClient（retry:1, 不随窗口聚焦刷新）、ThemeProvider（`.dark` class）+ sonner Toaster |
-| `src/router.tsx` | 路由表（全部页面 `React.lazy` 懒加载）；`Layout` 包裹全部管理页，`/submit` 独立纯净路由 |
+| `src/router.tsx` | 路由表（全部页面 `React.lazy` 懒加载）；`Layout` 包裹全部管理页，`/submit` 独立纯净路由，`*` 兜底到 `pages/NotFound` |
 | `src/api/client.ts` | axios 实例（baseURL `/api`，timeout 15s），响应拦截统一提取 `error.message` |
-| `src/api/*.ts` | tickets/stats/categories 接口封装（配合 TanStack Query hooks） |
-| `src/components/Layout.tsx` | 左侧边栏导航 + 顶栏 |
+| `src/api/*.ts` | auth/tickets/stats/categories/settings/notifications 接口封装（配合 TanStack Query hooks） |
+| `src/components/Layout.tsx` | 左侧边栏导航 + 顶栏（主题切换/退出/头像账号弹窗） |
+| `src/components/Table.tsx` | `DataTable`（骨架屏加载、可选多选）+ `PaginationBar`，实体列表统一使用 |
+| `src/components/StatusBadge.tsx` | 工单状态徽标（列表/详情共用） |
+| `src/components/PageSpinner.tsx` | 页面级加载态（替代各页手写 spinner） |
+| `src/components/AccountDialog.tsx` | 账号弹窗：当前用户信息 + 自助改密表单 |
 | `src/lib/theme.tsx` | 亮/暗主题 Provider（`html.dark` class + CSS 变量） |
-| `src/lib/validation.ts` | zod 表单校验 schema（工单/登录/分类） |
+| `src/lib/validation.ts` | 轻量表单校验（校验规则 + `useFormState` Hook，零运行时依赖）；字段错误行内红字提示，toast 只用于操作结果 |
 | `src/hooks/useChart.ts` | ECharts 实例封装（init/setOption/resize/dispose） |
 
 ### 4.4 前端路由表
@@ -138,11 +155,12 @@ pnpm --dir web build              # tsc -b（类型检查）+ vite build → web
 /tickets/new            新建（?edit=:id 为编辑）
 /tickets/:id            详情
 /settings/general       通用设置
-/settings/notifications 消息推送（PushPlus）
+/settings/notifications 消息推送（PushPlus / Server酱）
 /settings/users         用户管理（管理员）
 /settings/categories    分类管理
-/settings/data          数据与备份
-/submit                 报修提交（无侧边栏）
+/settings/data          数据与备份说明
+/submit                 报修提交 / 游客进度查询（无侧边栏，移动优先）
+*                       未匹配路径 → NotFound 404 页
 ```
 
 ## 5. 一键构建（生产）

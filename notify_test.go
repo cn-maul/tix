@@ -49,10 +49,17 @@ func reqWithCookie(t *testing.T, h http.Handler, method, target string, body any
 
 type notifyConfigData struct {
 	Data struct {
-		Enabled     int    `json:"enabled"`
-		TokenSet    bool   `json:"token_set"`
-		TokenMasked string `json:"token_masked"`
-		Topic       string `json:"topic"`
+		PushPlus struct {
+			Enabled     int    `json:"enabled"`
+			TokenSet    bool   `json:"token_set"`
+			TokenMasked string `json:"token_masked"`
+			Topic       string `json:"topic"`
+		} `json:"pushplus"`
+		ServerChan struct {
+			Enabled     int    `json:"enabled"`
+			SendKeySet  bool   `json:"sendkey_set"`
+			SendKeyMask string `json:"sendkey_masked"`
+		} `json:"serverchan"`
 	} `json:"data"`
 }
 
@@ -68,7 +75,7 @@ func TestNotifyEndpointsRequireAdmin(t *testing.T) {
 	if rr := getJSON(t, h, "/api/notify/config"); rr.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthed GET config: code=%d", rr.Code)
 	}
-	if rr := putJSON(t, h, "/api/notify/config", map[string]any{"enabled": 1}); rr.Code != http.StatusUnauthorized {
+	if rr := putJSON(t, h, "/api/notify/config", map[string]any{"pushplus": map[string]any{"enabled": 1}}); rr.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthed PUT config: code=%d", rr.Code)
 	}
 	if rr := postJSON(t, h, "/api/notify/test", nil); rr.Code != http.StatusUnauthorized {
@@ -86,20 +93,20 @@ func TestNotifyConfigFlow(t *testing.T) {
 	h := a.authMiddleware(a.routes())
 	c := adminCookie(t, a, h)
 
-	// 保存配置
+	// 保存 PushPlus 配置
 	rr := reqWithCookie(t, h, http.MethodPut, "/api/notify/config",
-		map[string]any{"enabled": 1, "token": "abcdefghijklmnop", "topic": "ops组"}, c)
+		map[string]any{"pushplus": map[string]any{"enabled": 1, "token": "abcdefghijklmnop", "topic": "ops组"}}, c)
 	requireStatus(t, rr, http.StatusOK)
 	var cd notifyConfigData
 	json.NewDecoder(rr.Body).Decode(&cd)
-	if cd.Data.Enabled != 1 || !cd.Data.TokenSet {
+	if cd.Data.PushPlus.Enabled != 1 || !cd.Data.PushPlus.TokenSet {
 		t.Fatalf("config unexpected: %+v", cd.Data)
 	}
-	if cd.Data.TokenMasked != "ab****mnop" {
-		t.Fatalf("mask unexpected: %q", cd.Data.TokenMasked)
+	if cd.Data.PushPlus.TokenMasked != "ab****mnop" {
+		t.Fatalf("mask unexpected: %q", cd.Data.PushPlus.TokenMasked)
 	}
-	if cd.Data.Topic != "ops组" {
-		t.Fatalf("topic unexpected: %q", cd.Data.Topic)
+	if cd.Data.PushPlus.Topic != "ops组" {
+		t.Fatalf("topic unexpected: %q", cd.Data.PushPlus.Topic)
 	}
 
 	// 配置已落库
@@ -112,28 +119,51 @@ func TestNotifyConfigFlow(t *testing.T) {
 	}
 
 	// 部分更新：仅关开关，Token 应保留
-	rr = reqWithCookie(t, h, http.MethodPut, "/api/notify/config", map[string]any{"enabled": 0}, c)
+	rr = reqWithCookie(t, h, http.MethodPut, "/api/notify/config",
+		map[string]any{"pushplus": map[string]any{"enabled": 0}}, c)
 	requireStatus(t, rr, http.StatusOK)
 	cfg, _ = loadNotifySettings(a.db)
 	if cfg.Token != "abcdefghijklmnop" || cfg.Enabled {
 		t.Fatalf("partial update clobbered fields: %+v", cfg)
 	}
 
-	// 显式清空 Token
-	rr = reqWithCookie(t, h, http.MethodPut, "/api/notify/config", map[string]any{"token": ""}, c)
+	// ServerChan 渠道：保存 SendKey，且不影响 PushPlus 配置
+	rr = reqWithCookie(t, h, http.MethodPut, "/api/notify/config",
+		map[string]any{"serverchan": map[string]any{"enabled": 1, "sendkey": "SCT000111222"}}, c)
 	requireStatus(t, rr, http.StatusOK)
 	cd = notifyConfigData{}
 	json.NewDecoder(rr.Body).Decode(&cd)
-	if cd.Data.TokenSet {
-		t.Fatal("token should be cleared")
+	if cd.Data.ServerChan.Enabled != 1 || !cd.Data.ServerChan.SendKeySet || cd.Data.ServerChan.SendKeyMask != "SC****1222" {
+		t.Fatalf("serverchan config unexpected: %+v", cd.Data.ServerChan)
+	}
+	if cd.Data.PushPlus.Enabled != 0 || !cd.Data.PushPlus.TokenSet {
+		t.Fatalf("serverchan update clobbered pushplus: %+v", cd.Data.PushPlus)
+	}
+	scCfg, _ := loadServerChanSettings(a.db)
+	if !scCfg.Enabled || scCfg.SendKey != "SCT000111222" {
+		t.Fatalf("serverchan persisted unexpected: %+v", scCfg)
+	}
+
+	// 显式清空 SendKey
+	rr = reqWithCookie(t, h, http.MethodPut, "/api/notify/config",
+		map[string]any{"serverchan": map[string]any{"sendkey": ""}}, c)
+	requireStatus(t, rr, http.StatusOK)
+	cd = notifyConfigData{}
+	json.NewDecoder(rr.Body).Decode(&cd)
+	if cd.Data.ServerChan.SendKeySet {
+		t.Fatal("sendkey should be cleared")
 	}
 
 	// 非法 enabled → 400
-	rr = reqWithCookie(t, h, http.MethodPut, "/api/notify/config", map[string]any{"enabled": 2}, c)
+	rr = reqWithCookie(t, h, http.MethodPut, "/api/notify/config",
+		map[string]any{"pushplus": map[string]any{"enabled": 2}}, c)
 	requireStatus(t, rr, http.StatusBadRequest)
 
 	// 公开设置接口不得下发 notify_* 键（未登录即可访问）
 	if err := setSetting(a.db, settingPushPlusToken, "topsecret"); err != nil {
+		t.Fatalf("setSetting: %v", err)
+	}
+	if err := setSetting(a.db, settingServerChanSendKey, "SCTtopsecret"); err != nil {
 		t.Fatalf("setSetting: %v", err)
 	}
 	rr = getJSON(t, h, "/api/settings")
@@ -243,7 +273,7 @@ func TestNotifyTestEndpoint(t *testing.T) {
 	srv, _ := fakePushPlus(t, 200)
 	overridePushPlusURL(t, srv.URL)
 	rr = reqWithCookie(t, h, http.MethodPut, "/api/notify/config",
-		map[string]any{"enabled": 1, "token": "tok123"}, c)
+		map[string]any{"pushplus": map[string]any{"enabled": 1, "token": "tok123"}}, c)
 	requireStatus(t, rr, http.StatusOK)
 
 	rr = reqWithCookie(t, h, http.MethodPost, "/api/notify/test", nil, c)

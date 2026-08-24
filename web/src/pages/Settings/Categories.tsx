@@ -1,8 +1,5 @@
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { z } from 'zod'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import {
@@ -26,7 +23,9 @@ import {
 } from '@/components/ui/dialog'
 import { DataTable, type Column } from '@/components/Table'
 import DeleteConfirm from '@/components/DeleteConfirm'
-import { categorySchema, type CategoryFormValues } from '@/lib/validation'
+import { useFormState, validateCategory, type CategoryFormValues } from '@/lib/validation'
+
+const emptyCategory: CategoryFormValues = { name: '', color: '#2563eb', sort: 0, enabled: true }
 
 export default function Categories() {
   const [modal, setModal] = useState<{ open: boolean; item?: Category }>({ open: false })
@@ -69,17 +68,10 @@ export default function Categories() {
     onError: (e: any) => toast.error(e.message || '删除失败'),
   })
 
-  const {
-    register,
-    handleSubmit,
-    setValue,
-    watch,
-    reset,
-    formState: { errors },
-  } = useForm<z.input<typeof categorySchema>, any, CategoryFormValues>({
-    resolver: zodResolver(categorySchema),
-    defaultValues: { sort: 0, enabled: true, color: '#2563eb' },
-  })
+  const { values, errors, set, reset, submit } = useFormState<CategoryFormValues>(
+    emptyCategory,
+    validateCategory,
+  )
 
   const openModal = (item?: Category) => {
     if (item) {
@@ -196,23 +188,39 @@ export default function Categories() {
           <DialogHeader>
             <DialogTitle>{modal.item ? '编辑分类' : '新增分类'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onFinish)} className="space-y-4">
+          <form onSubmit={submit(onFinish)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">名称</Label>
-              <Input id="name" placeholder="如：视频会议" {...register('name')} />
-              {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
+              <Input
+                id="name"
+                placeholder="如：视频会议"
+                value={values.name}
+                onChange={(e) => set('name', e.target.value)}
+              />
+              {errors.name && <p className="text-sm text-destructive">{errors.name}</p>}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="color">颜色</Label>
                 <div className="flex items-center gap-2">
-                  <Input id="color" type="color" className="size-10 w-14 p-1" {...register('color')} />
-                  <span className="font-mono text-xs text-muted-foreground">{watch('color')}</span>
+                  <Input
+                    id="color"
+                    type="color"
+                    className="size-10 w-14 p-1"
+                    value={values.color}
+                    onChange={(e) => set('color', e.target.value)}
+                  />
+                  <span className="font-mono text-xs text-muted-foreground">{values.color}</span>
                 </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="sort">排序</Label>
-                <Input id="sort" type="number" {...register('sort')} />
+                <Input
+                  id="sort"
+                  type="number"
+                  value={values.sort}
+                  onChange={(e) => set('sort', Number(e.target.value))}
+                />
               </div>
             </div>
             <div className="flex items-center justify-between rounded-lg border p-3">
@@ -222,8 +230,8 @@ export default function Categories() {
               </div>
               <Switch
                 id="enabled"
-                checked={watch('enabled')}
-                onCheckedChange={(c) => setValue('enabled', c)}
+                checked={values.enabled}
+                onCheckedChange={(c) => set('enabled', c)}
               />
             </div>
             <DialogFooter>

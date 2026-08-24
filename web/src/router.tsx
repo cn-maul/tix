@@ -15,6 +15,7 @@ const Notifications = lazy(() => import('./pages/Settings/Notifications'))
 const Users = lazy(() => import('./pages/Settings/Users'))
 const Categories = lazy(() => import('./pages/Settings/Categories'))
 const Data = lazy(() => import('./pages/Settings/Data'))
+const NotFound = lazy(() => import('./pages/NotFound'))
 
 export default function Router() {
   return (
@@ -46,6 +47,7 @@ export default function Router() {
           </Route>
         </Route>
         <Route path="/submit" element={<Submit />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>
   )

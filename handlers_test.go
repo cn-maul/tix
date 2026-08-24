@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 )
 
 func newTestApp(t *testing.T) *app {
@@ -23,7 +25,13 @@ func newTestApp(t *testing.T) *app {
 	if err := migrateDB(db); err != nil {
 		t.Fatalf("migrateDB: %v", err)
 	}
-	return &app{db: db, notify: newNotifier()}
+	return &app{
+		db:            db,
+		auth:          newAuthStore(),
+		notify:        newNotifier(),
+		loginLimiter:  newRateLimiter(10, time.Minute),
+		submitLimiter: newRateLimiter(10, time.Minute),
+	}
 }
 
 func postJSON(t *testing.T, h http.Handler, target string, body any) *httptest.ResponseRecorder {
@@ -71,20 +79,36 @@ func requireStatus(t *testing.T, rr *httptest.ResponseRecorder, want int) {
 
 // ---- 响应类型 ----
 
-type ticketData struct{ Data Ticket `json:"data"` }
+type ticketData struct {
+	Data Ticket `json:"data"`
+}
 type listResp struct {
 	Items []Ticket `json:"items"`
 	Total int      `json:"total"`
 	Page  int      `json:"page"`
 	Size  int      `json:"size"`
 }
-type commentResp struct{ Items []Comment `json:"items"` }
-type commentData struct{ Data Comment `json:"data"` }
-type categoryResp struct{ Items []Category `json:"items"` }
-type categoryData struct{ Data Category `json:"data"` }
-type okResp struct{ OK bool `json:"ok"` }
-type statsResp struct{ Data Stats `json:"data"` }
-type healthResp struct{ OK bool `json:"ok"` }
+type commentResp struct {
+	Items []Comment `json:"items"`
+}
+type commentData struct {
+	Data Comment `json:"data"`
+}
+type categoryResp struct {
+	Items []Category `json:"items"`
+}
+type categoryData struct {
+	Data Category `json:"data"`
+}
+type okResp struct {
+	OK bool `json:"ok"`
+}
+type statsResp struct {
+	Data Stats `json:"data"`
+}
+type healthResp struct {
+	OK bool `json:"ok"`
+}
 
 // ======================================================================
 // 健康检查
@@ -143,7 +167,7 @@ func TestCategoryCRUD(t *testing.T) {
 	requireStatus(t, rr, http.StatusOK)
 
 	// 校验：非法分类新建工单失败
-	rr = postJSON(t, h, "/api/tickets", map[string]string{"category": "非法分类", "content": "c", "creator": "a"})
+	rr = postJSON(t, h, "/api/tickets", map[string]string{"category": "非法分类", "content": "c", "name": "a", "phone": "13800138000"})
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("invalid category: code=%d", rr.Code)
 	}
@@ -164,13 +188,13 @@ func TestTicketFlow(t *testing.T) {
 	// 创建
 	var created ticketData
 	rr := postJSON(t, h, "/api/tickets", map[string]any{
-		"category": "软件问题", "content": "电脑蓝屏", "creator": "张三",
+		"category": "软件问题", "content": "电脑蓝屏", "name": "张三", "phone": "13800138000",
 	})
 	requireStatus(t, rr, http.StatusCreated)
 	json.NewDecoder(rr.Body).Decode(&created)
 
 	// 校验失败：内容为空
-	rr = postJSON(t, h, "/api/tickets", map[string]string{"category": "软件问题", "content": " ", "creator": "张三"})
+	rr = postJSON(t, h, "/api/tickets", map[string]string{"category": "软件问题", "content": " ", "name": "张三", "phone": "13800138000"})
 	requireStatus(t, rr, http.StatusBadRequest)
 
 	// 列表（待处理）
@@ -201,7 +225,7 @@ func TestTicketFlow(t *testing.T) {
 	}
 
 	// 编辑
-	rr = putJSON(t, h, "/api/tickets/1", map[string]any{"category": "网络问题", "content": "网络不通", "creator": "张三"})
+	rr = putJSON(t, h, "/api/tickets/1", map[string]any{"category": "网络问题", "content": "网络不通", "name": "张三", "phone": "13800138000"})
 	requireStatus(t, rr, http.StatusOK)
 	rr = getJSON(t, h, "/api/tickets/1")
 	json.NewDecoder(rr.Body).Decode(&det)
@@ -265,7 +289,7 @@ func TestTicketFlow(t *testing.T) {
 func TestTicketPagination(t *testing.T) {
 	a := newTestApp(t)
 	for i := 0; i < 8; i++ {
-		_, _ = createTicket(a.db, "其他", "工单"+strconv.Itoa(i), "张三")
+		_, _ = createTicket(a.db, "其他", "工单"+strconv.Itoa(i), "张三", "13800138000")
 	}
 	h := a.routes()
 	var list listResp
@@ -287,16 +311,42 @@ func TestTicketPagination(t *testing.T) {
 func TestSubmitCompat(t *testing.T) {
 	a := newTestApp(t)
 	h := a.routes()
-	rr := postJSON(t, h, "/api/submit", map[string]string{"category": "打印机故障", "content": "打印乱码", "creator": "李四"})
+	rr := postJSON(t, h, "/api/submit", map[string]string{"category": "打印机故障", "content": "打印乱码", "name": "李四", "phone": "13900139000"})
 	requireStatus(t, rr, http.StatusCreated)
 
-	// 表单编码
+	// 表单编码（新字段）
 	req := httptest.NewRequest(http.MethodPost, "/api/submit",
-		bytes.NewBufferString("category=软件问题&content=键盘坏&creator=王五"))
+		bytes.NewBufferString("category=软件问题&content=键盘坏&name=王五&phone=13800139111"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rr = httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	requireStatus(t, rr, http.StatusCreated)
+
+	// 旧版外部表单：整串 creator「姓名+手机号」，自动拆分
+	req = httptest.NewRequest(http.MethodPost, "/api/submit",
+		bytes.NewBufferString("category=网络问题&content=断网&creator="+url.QueryEscape("赵六13800139222")))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	requireStatus(t, rr, http.StatusCreated)
+	var created struct {
+		Data struct {
+			Creator string `json:"creator"`
+			Phone   string `json:"phone"`
+		} `json:"data"`
+	}
+	json.NewDecoder(rr.Body).Decode(&created)
+	if created.Data.Creator != "赵六" || created.Data.Phone != "13800139222" {
+		t.Fatalf("legacy split unexpected: %+v", created.Data)
+	}
+
+	// 缺手机号 → 400
+	req = httptest.NewRequest(http.MethodPost, "/api/submit",
+		bytes.NewBufferString("category=其他&content=无手机号&creator="+url.QueryEscape("无名氏")))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	requireStatus(t, rr, http.StatusBadRequest)
 }
 
 // ======================================================================
@@ -305,7 +355,7 @@ func TestSubmitCompat(t *testing.T) {
 
 func TestExportCSV(t *testing.T) {
 	a := newTestApp(t)
-	_, _ = createTicket(a.db, "软件问题", "测试导出", "张三")
+	_, _ = createTicket(a.db, "软件问题", "测试导出", "张三", "13800138000")
 	h := a.routes()
 	rr := getJSON(t, h, "/api/export/csv?status=0")
 	requireStatus(t, rr, http.StatusOK)
@@ -317,12 +367,19 @@ func TestExportCSV(t *testing.T) {
 	if !bytes.Contains([]byte(body), []byte("测试导出")) {
 		t.Fatalf("csv body missing content: %s", body)
 	}
+	// 表头含手机号列，数据行包含落库的手机号
+	if !bytes.Contains([]byte(body), []byte("发起人,手机号")) {
+		t.Fatalf("csv header missing phone column: %s", body)
+	}
+	if !bytes.Contains([]byte(body), []byte("13800138000")) {
+		t.Fatalf("csv body missing phone value: %s", body)
+	}
 	// UTF-8 BOM
 	if !bytes.HasPrefix(rr.Body.Bytes(), []byte{0xEF, 0xBB, 0xBF}) {
 		t.Fatalf("csv missing utf-8 bom")
 	}
 	// 公式注入防护
-	_, _ = createTicket(a.db, "软件问题", "=HYPERLINK(\"http://evil\")", "张三")
+	_, _ = createTicket(a.db, "软件问题", "=HYPERLINK(\"http://evil\")", "张三", "13800138000")
 	rr = getJSON(t, h, "/api/export/csv?status=0")
 	requireStatus(t, rr, http.StatusOK)
 	if !bytes.Contains(rr.Body.Bytes(), []byte("'=HYPERLINK")) {
@@ -462,7 +519,7 @@ func TestCategoryPartialUpdate(t *testing.T) {
 	}
 
 	// 停用后不可用于新建工单
-	rr = postJSON(t, h, "/api/tickets", map[string]string{"category": "视频会议", "content": "c", "creator": "a"})
+	rr = postJSON(t, h, "/api/tickets", map[string]string{"category": "视频会议", "content": "c", "name": "a", "phone": "13800138000"})
 	requireStatus(t, rr, http.StatusBadRequest)
 
 	// 重名分类 → 400

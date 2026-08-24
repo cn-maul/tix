@@ -9,3 +9,4 @@ web/dist
 web/tsconfig.*.tsbuildinfo
 *.err
 *.db-shm
+*.db.backup-*

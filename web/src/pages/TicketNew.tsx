@@ -1,6 +1,4 @@
 import { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -18,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ticketSchema, type TicketFormValues } from '@/lib/validation'
+import { useFormState, validateTicketInput, type TicketInputValues } from '@/lib/validation'
 
 const fallbackCats = ['硬件故障', '软件问题', '网络问题', '打印机故障', '其他']
 
@@ -30,14 +28,10 @@ export default function TicketNew() {
   const [saving, setSaving] = useState(false)
   const [categories, setCategories] = useState<string[]>([])
 
-  const {
-    register,
-    handleSubmit,
-    setValue,
-    reset,
-    watch,
-    formState: { errors },
-  } = useForm<TicketFormValues>({ resolver: zodResolver(ticketSchema) })
+  const { values, errors, set, reset, submit } = useFormState<TicketInputValues>(
+    { category: '', name: '', phone: '', content: '' },
+    validateTicketInput,
+  )
 
   useEffect(() => {
     let alive = true
@@ -50,7 +44,7 @@ export default function TicketNew() {
       })
     if (editId) {
       fetchOne(editId)
-        .then((t) => reset({ category: t.category, creator: t.creator, content: t.content }))
+        .then((t) => reset({ category: t.category, name: t.creator, phone: t.phone, content: t.content }))
         .catch(() => toast.error('加载工单失败'))
     }
     return () => {
@@ -58,15 +52,21 @@ export default function TicketNew() {
     }
   }, [editId, reset])
 
-  const onSubmit = async (values: TicketFormValues) => {
+  const onSubmit = async (values: TicketInputValues) => {
     setSaving(true)
     try {
+      const payload = {
+        category: values.category,
+        content: values.content,
+        name: values.name.trim(),
+        phone: values.phone.trim(),
+      }
       if (editId) {
-        await updateTicket(editId, values)
+        await updateTicket(editId, payload)
         toast.success('已更新')
         navigate(`/tickets/${editId}`)
       } else {
-        const t = await createTicket(values)
+        const t = await createTicket(payload)
         toast.success('已提交')
         navigate(`/tickets/${t.id}`)
       }
@@ -88,10 +88,10 @@ export default function TicketNew() {
       </Button>
       <h1 className="text-xl font-semibold">{editId ? '编辑工单' : '新建工单'}</h1>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 rounded-xl border bg-card p-6 shadow-sm">
+      <form onSubmit={submit(onSubmit)} className="space-y-4 rounded-xl border bg-card p-6 shadow-sm">
         <div className="space-y-2">
           <Label>分类</Label>
-          <Select value={watch('category') || undefined} onValueChange={(v) => setValue('category', v)}>
+          <Select value={values.category || undefined} onValueChange={(v) => set('category', v)}>
             <SelectTrigger className="w-full">
               <SelectValue placeholder="选择分类" />
             </SelectTrigger>
@@ -103,19 +103,45 @@ export default function TicketNew() {
               ))}
             </SelectContent>
           </Select>
-          {errors.category && <p className="text-sm text-destructive">{errors.category.message}</p>}
+          {errors.category && <p className="text-sm text-destructive">{errors.category}</p>}
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="creator">发起人</Label>
-          <Input id="creator" placeholder="姓名 / 手机号" {...register('creator')} />
-          {errors.creator && <p className="text-sm text-destructive">{errors.creator.message}</p>}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="name">姓名</Label>
+            <Input
+              id="name"
+              placeholder="发起人姓名"
+              value={values.name}
+              onChange={(e) => set('name', e.target.value)}
+            />
+            {errors.name && <p className="text-sm text-destructive">{errors.name}</p>}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="phone">手机号</Label>
+            <Input
+              id="phone"
+              type="tel"
+              inputMode="numeric"
+              maxLength={11}
+              placeholder="11 位手机号"
+              value={values.phone}
+              onChange={(e) => set('phone', e.target.value.replace(/\D/g, ''))}
+            />
+            {errors.phone && <p className="text-sm text-destructive">{errors.phone}</p>}
+          </div>
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="content">内容</Label>
-          <Textarea id="content" rows={4} placeholder="请描述问题…" {...register('content')} />
-          {errors.content && <p className="text-sm text-destructive">{errors.content.message}</p>}
+          <Textarea
+            id="content"
+            rows={4}
+            placeholder="请描述问题…"
+            value={values.content}
+            onChange={(e) => set('content', e.target.value)}
+          />
+          {errors.content && <p className="text-sm text-destructive">{errors.content}</p>}
         </div>
 
         <Button type="submit" loading={saving}>

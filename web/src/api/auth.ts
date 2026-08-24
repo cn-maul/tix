@@ -51,3 +51,8 @@ export async function updateUser(
 export async function deleteUser(id: number): Promise<void> {
   await client.delete(`/users/${id}`)
 }
+
+// 自助改密：校验旧密码后设置新密码；其他端会话被吊销，当前会话保留
+export async function changePassword(oldPassword: string, newPassword: string): Promise<void> {
+  await client.put('/profile/password', { old_password: oldPassword, new_password: newPassword })
+}

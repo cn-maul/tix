@@ -51,10 +51,17 @@ func main() {
 	if err := setupDefaultAdmin(db, pw); err != nil {
 		log.Fatalf("初始化默认管理员失败: %v", err)
 	}
-	a := &app{db: db, auth: newAuthStore(), notify: newNotifier(), trustProxy: *trustProxy}
+	a := &app{
+		db:            db,
+		auth:          newAuthStore(),
+		notify:        newNotifier(),
+		trustProxy:    *trustProxy,
+		loginLimiter:  newRateLimiter(10, time.Minute),
+		submitLimiter: newRateLimiter(10, time.Minute),
+	}
 	srv := &http.Server{
 		Addr:              *addr,
-		Handler:           a.authMiddleware(a.routes()),
+		Handler:           securityHeaders(a.authMiddleware(a.routes())),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -92,25 +99,31 @@ func (a *app) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/stats", a.apiStats)
 	mux.HandleFunc("GET /api/tickets", a.apiTicketList)
 	mux.HandleFunc("POST /api/tickets", a.apiTicketCreate)
-	mux.HandleFunc("/api/tickets/{id}", a.apiTicketByID)            // GET / PUT
+	mux.HandleFunc("/api/tickets/{id}", a.apiTicketByID) // GET / PUT
 	mux.HandleFunc("POST /api/tickets/{id}/done", a.apiTicketDone)
 	mux.HandleFunc("POST /api/tickets/{id}/delete", a.apiTicketDelete)
-	mux.HandleFunc("/api/tickets/{id}/comments", a.apiTicketComments) // GET / POST
+	mux.HandleFunc("POST /api/tickets/{id}/assign", a.apiTicketAssign)       // 指派/取消负责人
+	mux.HandleFunc("POST /api/tickets/batch-done", a.apiTicketBatchDone)     // 批量标记已处理
+	mux.HandleFunc("POST /api/tickets/batch-delete", a.apiTicketBatchDelete) // 批量删除（含备注）
+	mux.HandleFunc("/api/tickets/{id}/comments", a.apiTicketComments)        // GET / POST
 	mux.HandleFunc("GET /api/categories", a.apiCategoryList)
 	mux.HandleFunc("POST /api/categories", a.apiCategoryCreate)
-	mux.HandleFunc("/api/categories/{id}", a.apiCategoryByID)      // PUT / DELETE
-	mux.HandleFunc("POST /api/submit", a.apiSubmitCompat)           // 表单兼容别名（公开）
+	mux.HandleFunc("/api/categories/{id}", a.apiCategoryByID)           // PUT / DELETE
+	mux.HandleFunc("POST /api/submit", a.apiSubmitCompat)               // 表单兼容别名（公开）
 	mux.HandleFunc("GET /api/submit/categories", a.apiSubmitCategories) // 提交页分类（公开）
-	mux.HandleFunc("GET /api/export/csv", a.apiExportCSV)          // CSV 导出
-	mux.HandleFunc("GET /api/users", a.apiUserList)               // 用户列表（管理员）
-	mux.HandleFunc("POST /api/users", a.apiUserCreate)            // 创建用户（管理员）
-	mux.HandleFunc("PUT /api/users/{id}", a.apiUserUpdate)        // 更新用户（管理员）
-	mux.HandleFunc("DELETE /api/users/{id}", a.apiUserDelete)     // 删除用户（管理员）
-	mux.HandleFunc("GET /api/settings", a.apiSettingsGet)           // 获取设置（公开，仅白名单键）
-	mux.HandleFunc("PUT /api/settings", a.apiSettingsUpdate)        // 更新设置（管理员）
-	mux.HandleFunc("GET /api/notify/config", a.apiNotifyConfigGet)  // 推送配置（管理员，Token 脱敏）
-	mux.HandleFunc("PUT /api/notify/config", a.apiNotifyConfigUpdate) // 更新推送配置（管理员）
-	mux.HandleFunc("POST /api/notify/test", a.apiNotifyTest)        // 发送测试推送（管理员）
+	mux.HandleFunc("GET /api/my/tickets", a.apiMyTickets)               // 游客进度查询：列表（公开）
+	mux.HandleFunc("GET /api/my/tickets/{id}", a.apiMyTicketDetail)     // 游客进度查询：详情+处理记录（公开）
+	mux.HandleFunc("GET /api/export/csv", a.apiExportCSV)               // CSV 导出
+	mux.HandleFunc("GET /api/users", a.apiUserList)                     // 用户列表（登录用户，供指派取人）
+	mux.HandleFunc("POST /api/users", a.apiUserCreate)                  // 创建用户（管理员）
+	mux.HandleFunc("PUT /api/users/{id}", a.apiUserUpdate)              // 更新用户（管理员）
+	mux.HandleFunc("DELETE /api/users/{id}", a.apiUserDelete)           // 删除用户（管理员）
+	mux.HandleFunc("PUT /api/profile/password", a.apiProfilePassword)   // 自助改密（登录用户）
+	mux.HandleFunc("GET /api/settings", a.apiSettingsGet)               // 获取设置（公开，仅白名单键）
+	mux.HandleFunc("PUT /api/settings", a.apiSettingsUpdate)            // 更新设置（管理员）
+	mux.HandleFunc("GET /api/notify/config", a.apiNotifyConfigGet)      // 推送配置（管理员，Token 脱敏）
+	mux.HandleFunc("PUT /api/notify/config", a.apiNotifyConfigUpdate)   // 更新推送配置（管理员）
+	mux.HandleFunc("POST /api/notify/test", a.apiNotifyTest)            // 发送测试推送（管理员）
 	// 未注册的 /api 路径统一返回 404 JSON（避免落入 SPA 回退）
 	mux.HandleFunc("/api/", a.apiNotFound)
 
@@ -124,8 +137,28 @@ func (a *app) apiNotFound(w http.ResponseWriter, r *http.Request) {
 	jsonError(w, http.StatusNotFound, "接口不存在")
 }
 
+// securityHeaders 为所有响应附加基础安全头（含 401/404 等错误响应）。
+// CSP 约束资源同源加载：Vite 产物均为 /assets 下的自托管资源，
+// style-src 'unsafe-inline' 用于 Radix/ECharts/sonner 的行内样式。
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "same-origin")
+		w.Header().Set("Content-Security-Policy",
+			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "+
+				"img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; "+
+				"frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+		next.ServeHTTP(w, r)
+	})
+}
+
 // publicAPI 无需密码即可访问的接口。
 func publicAPI(p string) bool {
+	// 游客进度查询：列表与 /api/my/tickets/{id} 详情（详情按前缀放行）
+	if p == "/api/my/tickets" || strings.HasPrefix(p, "/api/my/tickets/") {
+		return true
+	}
 	switch p {
 	case "/api/health", "/api/login", "/api/logout", "/api/auth/status", "/api/submit", "/api/submit/categories", "/api/settings":
 		return true

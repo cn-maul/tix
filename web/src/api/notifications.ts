@@ -1,11 +1,22 @@
 import client from './client'
 
-// 推送配置（Token 仅返回脱敏形式）
-export interface NotifyConfig {
+// 推送配置（分渠道；密钥仅返回脱敏形式）
+export interface PushPlusConfig {
   enabled: number
   token_set: boolean
   token_masked: string
   topic: string
+}
+
+export interface ServerChanConfig {
+  enabled: number
+  sendkey_set: boolean
+  sendkey_masked: string
+}
+
+export interface NotifyConfig {
+  pushplus: PushPlusConfig
+  serverchan: ServerChanConfig
 }
 
 // 单渠道发送结果
@@ -16,19 +27,27 @@ export interface NotifyResult {
 }
 
 export async function getNotifyConfig(): Promise<NotifyConfig> {
-  const r = await client.get('/notify/config')
-  return r.data?.data ?? { enabled: 0, token_set: false, token_masked: '', topic: '' }
+  const r = await client.get<{ data: NotifyConfig }>('/notify/config')
+  return (
+    r.data?.data ?? {
+      pushplus: { enabled: 0, token_set: false, token_masked: '', topic: '' },
+      serverchan: { enabled: 0, sendkey_set: false, sendkey_masked: '' },
+    }
+  )
 }
 
-// token 不传表示保持不变；传空串清除
-export async function updateNotifyConfig(
-  cfg: { enabled?: number; token?: string; topic?: string },
-): Promise<NotifyConfig> {
-  const r = await client.put('/notify/config', cfg)
+// 各字段出现即生效：密钥传空串清除，不传保持不变
+export interface NotifyConfigUpdate {
+  pushplus?: { enabled?: number; token?: string; topic?: string }
+  serverchan?: { enabled?: number; sendkey?: string }
+}
+
+export async function updateNotifyConfig(cfg: NotifyConfigUpdate): Promise<NotifyConfig> {
+  const r = await client.put<{ data: NotifyConfig }>('/notify/config', cfg)
   return r.data?.data
 }
 
 export async function testNotify(): Promise<NotifyResult[]> {
-  const r = await client.post('/notify/test')
+  const r = await client.post<{ data: { results: NotifyResult[] } }>('/notify/test')
   return r.data?.data?.results ?? []
 }

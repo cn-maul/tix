@@ -1,6 +1,4 @@
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -9,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { loginSchema, type LoginFormValues } from '@/lib/validation'
+import { useFormState, validateLogin, type LoginFormValues } from '@/lib/validation'
 import { useAuth } from '@/auth'
 import { getSettings } from '@/api/settings'
 
@@ -26,22 +24,29 @@ export default function Login() {
   })
   const siteName = settings?.site_name || 'tix 工单系统'
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<LoginFormValues>({ resolver: zodResolver(loginSchema) })
+  const { values, errors, set, submit } = useFormState<LoginFormValues>(
+    { username: '', password: '' },
+    validateLogin,
+  )
 
   const onFinish = async ({ username, password }: LoginFormValues) => {
     setLoading(true)
     try {
       await login(username, password)
+      // 防止开放重定向：解码后必须以/开头，不能是/login，不能以//开头（协议相对URL）。
+      // 解码前的原始值可能是 %2F%2F 之类编码形式，故统一在解码后校验。
+      let safeNext = '/'
       const next = params.get('next')
-      // 防止开放重定向：必须以/开头，不能是/login，不能以//开头（协议相对URL）
-      const safeNext =
-        next && next.startsWith('/') && !next.startsWith('/login') && !next.startsWith('//')
-          ? decodeURIComponent(next)
-          : '/'
+      if (next) {
+        try {
+          const decoded = decodeURIComponent(next)
+          if (decoded.startsWith('/') && !decoded.startsWith('//') && !decoded.startsWith('/login')) {
+            safeNext = decoded
+          }
+        } catch {
+          // 非法百分号编码：忽略，回首页
+        }
+      }
       navigate(safeNext, { replace: true })
     } catch (e: any) {
       toast.error(e?.message ?? '登录失败')
@@ -60,7 +65,7 @@ export default function Login() {
           <CardTitle className="text-xl">{siteName}</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit(onFinish)} className="space-y-4">
+          <form onSubmit={submit(onFinish)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="username">用户名</Label>
               <div className="relative">
@@ -71,11 +76,12 @@ export default function Login() {
                   placeholder="用户名"
                   autoFocus
                   autoComplete="username"
-                  {...register('username')}
+                  value={values.username}
+                  onChange={(e) => set('username', e.target.value)}
                 />
               </div>
               {errors.username && (
-                <p className="text-sm text-destructive">{errors.username.message}</p>
+                <p className="text-sm text-destructive">{errors.username}</p>
               )}
             </div>
             <div className="space-y-2">
@@ -88,11 +94,12 @@ export default function Login() {
                   className="pl-9"
                   placeholder="密码"
                   autoComplete="current-password"
-                  {...register('password')}
+                  value={values.password}
+                  onChange={(e) => set('password', e.target.value)}
                 />
               </div>
               {errors.password && (
-                <p className="text-sm text-destructive">{errors.password.message}</p>
+                <p className="text-sm text-destructive">{errors.password}</p>
               )}
             </div>
             <Button type="submit" className="w-full" loading={loading}>

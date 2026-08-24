@@ -6,7 +6,7 @@
 
 - 单文件存储，备份 = 复制文件（建议停机后复制，或使用 `VACUUM INTO` 在线导出一致快照）
 - 零配置，适合小团队内网使用
-- 单连接（`SetMaxOpenConns(1)`）避免偶发 `database is locked`，启用 WAL 日志模式与 5s busy_timeout
+- 单连接（`SetMaxOpenConns(1)`）避免偶发 `database is locked`，启用 WAL 日志模式、5s busy_timeout 与 `foreign_keys=ON`
 
 ## 2. 表结构（initDB）
 
@@ -142,6 +142,7 @@ migrateDB(db)        // 幂等迁移（见下）
 | `getTicket` | 按 id 查单条，无记录返回 `(nil, nil)` |
 | `createTicket(category, content, creator)` | INSERT，status=0 |
 | `updateTicket(id, category, content, creator)` | UPDATE + 刷新 updated_at |
+| `touchTicket(id)` | 仅刷新 updated_at（备注等不修改正文的操作使用，避免旧值回写覆盖并发编辑） |
 | `markDone(id)` | `SET status = 1, updated_at = ?` |
 | `deleteTicket(id)` | DELETE |
 
@@ -158,10 +159,10 @@ SELECT <cols> FROM tickets <cond> ORDER BY id DESC LIMIT ? OFFSET ?
 
 | 函数 | 说明 |
 |------|------|
-| `addComment(ticketID, author, content)` | INSERT，返回新 id |
+| `addComment(ticketID, author, content)` | INSERT，返回 `(新 id, 实际落库时间)` |
 | `listComments(ticketID)` | `WHERE ticket_id = ? ORDER BY id ASC` |
 
-标记已处理带 note 时，`apiTicketDone` 会写入 `【标记已处理】<note>` 前缀的备注。
+标记已处理带 note 时，`apiTicketDone` 会写入 `【标记已处理】<note>` 前缀的备注。追加备注（`POST /api/tickets/{id}/comments`）后通过 `touchTicket` 刷新工单 `updated_at`，不回写工单正文。
 
 ### 6.4 设置（KV）
 
@@ -173,7 +174,9 @@ SELECT <cols> FROM tickets <cond> ORDER BY id DESC LIMIT ? OFFSET ?
 
 推送配置经 `loadNotifySettings(db)` 聚合为 `{Enabled, Token, Topic}`，供统一推送模块实时读取。
 
-### 6.4 工单编号
+> 写入侧白名单：管理端 `PUT /api/settings` 仅接受 `site_name` 键（`adminSettingKeys`）；`notify_*` 等敏感键只能经 `/api/notify/config` 的专用校验逻辑修改。
+
+### 6.5 工单编号
 
 ```go
 ticketNumber(t) = "T-" + created_at 的日期部分 + "-" + %04d(id)
