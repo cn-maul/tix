@@ -4,6 +4,7 @@
 
 - 统一前缀 `/api`，JSON 编解码
 - 除公开接口（`/api/health`、`/api/login`、`/api/logout`、`/api/auth/status`、`/api/submit`、`/api/submit/categories`、`/api/settings`）外，**均需登录会话**（`tix_session` Cookie，HttpOnly + SameSite=Lax，7 天有效期）
+- **外部集成**：管理员可在「系统设置-通用设置」生成 API Key，此后携带 `X-API-Key: <key>` 请求头即可免会话访问需登录接口（等效 operator 权限：无对应用户、不可访问管理员接口、`assignee=me` 不可用）。Key 存于设置表 `api_key`，重新生成后旧 Key 立即失效
 - 会话存于内存（服务重启即全部失效）；每次请求回查用户表——**用户被删除或角色被调整后，其已有会话立即失效**
 - 单资源响应：`{ "data": {...} }`
 - 列表响应：`{ "items": [...], "total": n, "page": n, "size": n }`
@@ -41,7 +42,9 @@
 | GET | `/api/my/tickets` | 游客进度查询：凭手机号查自己提交的工单列表 | `apiMyTickets` | 公开 |
 | GET | `/api/my/tickets/{id}` | 游客进度查询：详情 + 处理记录（凭手机号） | `apiMyTicketDetail` | 公开 |
 | GET | `/api/settings` | 公开设置（仅白名单键，如 `site_name`） | `apiSettingsGet` | 公开 |
-| PUT | `/api/settings` | 更新设置 | `apiSettingsUpdate` | 管理员 |
+| PUT | `/api/settings` | 更新设置（`site_name`、`api_key`） | `apiSettingsUpdate` | 管理员 |
+| GET | `/api/settings/api-key` | 查看外部集成 API Key | `apiSettingsAPIKeyGet` | 管理员 |
+| POST | `/api/settings/api-key/generate` | 生成/轮换外部集成 API Key | `apiSettingsAPIKeyGenerate` | 管理员 |
 | GET | `/api/users` | 用户列表（指派下拉等需要；不含密码） | `apiUserList` | 需要 |
 | POST | `/api/users` | 创建用户（密码存 bcrypt 哈希） | `apiUserCreate` | 管理员 |
 | PUT | `/api/users/{id}` | 更新用户；可改自己显示名/密码，不能改自己角色 | `apiUserUpdate` | 管理员 |
@@ -370,7 +373,7 @@ T-20260818-0001,软件问题,电脑蓝屏,张三13800138000,待处理,,2026-08-1
 
 #### GET /api/settings（公开，无需登录）
 
-仅返回白名单内的非敏感键（当前仅 `site_name`）；`notify_*`（推送 Token 等敏感配置）不会经此接口下发：
+仅返回白名单内的非敏感键（当前仅 `site_name`）；`notify_*`（推送 Token 等敏感配置）与 `api_key` 不会经此接口下发：
 
 ```json
 200 OK
@@ -379,9 +382,30 @@ T-20260818-0001,软件问题,电脑蓝屏,张三13800138000,待处理,,2026-08-1
 
 #### PUT /api/settings（管理员）
 
-请求体为键值对象，**仅接受白名单键**（当前仅 `site_name`），其他键返回 `400`——防止绕过 `/api/notify/config` 的专用校验直接写敏感配置。
+请求体为键值对象，**仅接受白名单键**（`site_name`、`api_key`），其他键返回 `400`——防止绕过 `/api/notify/config` 的专用校验直接写敏感配置。
 - `site_name` 长度上限 32 字符，超长返回 `400`
+- `api_key` 长度上限 64 字符，超长返回 `400`；一般不建议手工设置，用下面的生成接口
 - 成功：`200` + `{ "data": { "ok": true } }`
+
+#### GET /api/settings/api-key（管理员）
+
+返回外部集成 API Key（配合 `X-API-Key` 请求头使用，见「约定」）：
+
+```json
+200 OK
+{ "data": { "api_key": "6d0c7f2a…" } }
+```
+
+未生成时 `api_key` 为空串。
+
+#### POST /api/settings/api-key/generate（管理员）
+
+生成（或轮换）外部集成 API Key，返回新 Key；**旧 Key 立即失效**：
+
+```json
+200 OK
+{ "data": { "api_key": "6d0c7f2a…" } }
+```
 
 ### 4.20 用户管理（/api/users）
 

@@ -110,22 +110,24 @@ func (a *app) routes() *http.ServeMux {
 	mux.HandleFunc("/api/tickets/{id}/comments", a.apiTicketComments)        // GET / POST
 	mux.HandleFunc("GET /api/categories", a.apiCategoryList)
 	mux.HandleFunc("POST /api/categories", a.apiCategoryCreate)
-	mux.HandleFunc("/api/categories/{id}", a.apiCategoryByID)           // PUT / DELETE
-	mux.HandleFunc("POST /api/submit", a.apiSubmitCompat)               // 表单兼容别名（公开）
-	mux.HandleFunc("GET /api/submit/categories", a.apiSubmitCategories) // 提交页分类（公开）
-	mux.HandleFunc("GET /api/my/tickets", a.apiMyTickets)               // 游客进度查询：列表（公开）
-	mux.HandleFunc("GET /api/my/tickets/{id}", a.apiMyTicketDetail)     // 游客进度查询：详情+处理记录（公开）
-	mux.HandleFunc("GET /api/export/csv", a.apiExportCSV)               // CSV 导出
-	mux.HandleFunc("GET /api/users", a.apiUserList)                     // 用户列表（登录用户，供指派取人）
-	mux.HandleFunc("POST /api/users", a.apiUserCreate)                  // 创建用户（管理员）
-	mux.HandleFunc("PUT /api/users/{id}", a.apiUserUpdate)              // 更新用户（管理员）
-	mux.HandleFunc("DELETE /api/users/{id}", a.apiUserDelete)           // 删除用户（管理员）
-	mux.HandleFunc("PUT /api/profile/password", a.apiProfilePassword)   // 自助改密（登录用户）
-	mux.HandleFunc("GET /api/settings", a.apiSettingsGet)               // 获取设置（公开，仅白名单键）
-	mux.HandleFunc("PUT /api/settings", a.apiSettingsUpdate)            // 更新设置（管理员）
-	mux.HandleFunc("GET /api/notify/config", a.apiNotifyConfigGet)      // 推送配置（管理员，Token 脱敏）
-	mux.HandleFunc("PUT /api/notify/config", a.apiNotifyConfigUpdate)   // 更新推送配置（管理员）
-	mux.HandleFunc("POST /api/notify/test", a.apiNotifyTest)            // 发送测试推送（管理员）
+	mux.HandleFunc("/api/categories/{id}", a.apiCategoryByID)                          // PUT / DELETE
+	mux.HandleFunc("POST /api/submit", a.apiSubmitCompat)                              // 表单兼容别名（公开）
+	mux.HandleFunc("GET /api/submit/categories", a.apiSubmitCategories)                // 提交页分类（公开）
+	mux.HandleFunc("GET /api/my/tickets", a.apiMyTickets)                              // 游客进度查询：列表（公开）
+	mux.HandleFunc("GET /api/my/tickets/{id}", a.apiMyTicketDetail)                    // 游客进度查询：详情+处理记录（公开）
+	mux.HandleFunc("GET /api/export/csv", a.apiExportCSV)                              // CSV 导出
+	mux.HandleFunc("GET /api/users", a.apiUserList)                                    // 用户列表（登录用户，供指派取人）
+	mux.HandleFunc("POST /api/users", a.apiUserCreate)                                 // 创建用户（管理员）
+	mux.HandleFunc("PUT /api/users/{id}", a.apiUserUpdate)                             // 更新用户（管理员）
+	mux.HandleFunc("DELETE /api/users/{id}", a.apiUserDelete)                          // 删除用户（管理员）
+	mux.HandleFunc("PUT /api/profile/password", a.apiProfilePassword)                  // 自助改密（登录用户）
+	mux.HandleFunc("GET /api/settings", a.apiSettingsGet)                              // 获取设置（公开，仅白名单键）
+	mux.HandleFunc("PUT /api/settings", a.apiSettingsUpdate)                           // 更新设置（管理员）
+	mux.HandleFunc("GET /api/settings/api-key", a.apiSettingsAPIKeyGet)                // 查看集成 API Key（管理员）
+	mux.HandleFunc("POST /api/settings/api-key/generate", a.apiSettingsAPIKeyGenerate) // 生成/轮换 Key（管理员）
+	mux.HandleFunc("GET /api/notify/config", a.apiNotifyConfigGet)                     // 推送配置（管理员，Token 脱敏）
+	mux.HandleFunc("PUT /api/notify/config", a.apiNotifyConfigUpdate)                  // 更新推送配置（管理员）
+	mux.HandleFunc("POST /api/notify/test", a.apiNotifyTest)                           // 发送测试推送（管理员）
 	// 未注册的 /api 路径统一返回 404 JSON（避免落入 SPA 回退）
 	mux.HandleFunc("/api/", a.apiNotFound)
 

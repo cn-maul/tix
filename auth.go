@@ -17,6 +17,10 @@ import (
 const (
 	sessionCookie = "tix_session"
 	sessionTTL    = 7 * 24 * time.Hour
+
+	// settingAPIKey 外部集成 API Key（设置表键名）：持钥请求可经 X-API-Key 头免登录
+	// 访问需登录的接口。属敏感配置，不进公开设置白名单。
+	settingAPIKey = "api_key"
 )
 
 // sessionEntry 存储会话对应的用户信息。
@@ -117,8 +121,30 @@ func currentSessionToken(r *http.Request) string {
 	return ""
 }
 
+// checkAPIKey 校验 X-API-Key 请求头是否与设置中的 api_key 一致（恒定时间比较）。
+func (a *app) checkAPIKey(r *http.Request) bool {
+	key := r.Header.Get("X-API-Key")
+	if key == "" {
+		return false
+	}
+	stored, err := getSetting(a.db, settingAPIKey)
+	if err != nil || stored == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(stored), []byte(key)) == 1
+}
+
 // requireAuth 校验会话 cookie；未通过时写 401 并返回 nil。
+// 支持外部集成认证：携带有效 X-API-Key 请求头时免会话直接放行，
+// 等效 operator 权限（无对应用户，不能访问管理员接口，assignee=me 不可用）。
 func (a *app) requireAuth(w http.ResponseWriter, r *http.Request) *sessionEntry {
+	if r.Header.Get("X-API-Key") != "" {
+		if a.checkAPIKey(r) {
+			return &sessionEntry{username: "api-key", role: "operator"}
+		}
+		jsonError(w, http.StatusUnauthorized, "API Key 无效")
+		return nil
+	}
 	c, err := r.Cookie(sessionCookie)
 	if err != nil {
 		jsonError(w, http.StatusUnauthorized, "未登录或登录已过期")
@@ -492,6 +518,7 @@ func (a *app) apiSettingsGet(w http.ResponseWriter, r *http.Request) {
 // 敏感配置（如 notify_* 推送 Token）必须走 /api/notify/config 的专用校验逻辑。
 var adminSettingKeys = map[string]bool{
 	"site_name": true,
+	"api_key":   true, // 外部集成 Key；查看/生成走 /api/settings/api-key 专用接口
 }
 
 func (a *app) apiSettingsUpdate(w http.ResponseWriter, r *http.Request) {
@@ -511,10 +538,46 @@ func (a *app) apiSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, http.StatusBadRequest, "网站名称过长（最多 32 字符）")
 			return
 		}
+		if k == "api_key" && len(v) > 64 {
+			jsonError(w, http.StatusBadRequest, "API Key 过长（最多 64 字符）")
+			return
+		}
 		if err := setSetting(a.db, k, v); err != nil {
 			jsonError(w, http.StatusInternalServerError, "保存设置失败")
 			return
 		}
 	}
 	jsonResp(w, http.StatusOK, map[string]any{"data": map[string]any{"ok": true}})
+}
+
+// apiSettingsAPIKeyGet GET /api/settings/api-key —— 查看外部集成 API Key（管理员）。
+func (a *app) apiSettingsAPIKeyGet(w http.ResponseWriter, r *http.Request) {
+	if a.requireAdmin(w, r) == nil {
+		return
+	}
+	key, err := getSetting(a.db, settingAPIKey)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "读取设置失败")
+		return
+	}
+	jsonResp(w, http.StatusOK, map[string]any{"data": map[string]any{"api_key": key}})
+}
+
+// apiSettingsAPIKeyGenerate POST /api/settings/api-key/generate —— 生成（或轮换）外部集成 API Key。
+// 生成 48 位随机十六进制串，旧 Key 立即失效。
+func (a *app) apiSettingsAPIKeyGenerate(w http.ResponseWriter, r *http.Request) {
+	if a.requireAdmin(w, r) == nil {
+		return
+	}
+	buf := make([]byte, 24)
+	if _, err := rand.Read(buf); err != nil {
+		jsonError(w, http.StatusInternalServerError, "生成 API Key 失败")
+		return
+	}
+	key := hex.EncodeToString(buf)
+	if err := setSetting(a.db, settingAPIKey, key); err != nil {
+		jsonError(w, http.StatusInternalServerError, "保存设置失败")
+		return
+	}
+	jsonResp(w, http.StatusOK, map[string]any{"data": map[string]any{"api_key": key}})
 }
