@@ -277,7 +277,7 @@ export default function Submit() {
                 <Textarea
                   id="content"
                   rows={4}
-                  placeholder="请描述问题…"
+                  placeholder="请输入维修地点和问题"
                   value={values.content}
                   onChange={(e) => set('content', e.target.value)}
                 />
