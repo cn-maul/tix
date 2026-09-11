@@ -36,7 +36,17 @@ export default defineConfig({
       output: {
         manualChunks: {
           react: ['react', 'react-dom', 'react-router-dom'],
-          echarts: ['echarts'],
+          query: ['@tanstack/react-query'],
+          radix: [
+            '@radix-ui/react-alert-dialog',
+            '@radix-ui/react-dialog',
+            '@radix-ui/react-select',
+            '@radix-ui/react-slot',
+            '@radix-ui/react-switch',
+            '@radix-ui/react-tooltip',
+          ],
+          icons: ['lucide-react'],
+          feedback: ['sonner'],
         },
       },
     },

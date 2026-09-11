@@ -112,45 +112,47 @@ export function DataTable<T extends object>({
     : columns
 
   return (
-    <div className={cn('rounded-xl border bg-card shadow-sm', className)}>
-      <UITable>
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            {cols.map((c) => (
-              <TableHead key={c.key} style={{ width: c.width }}>
-                {c.title}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {loading
-            ? Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={`skeleton-${i}`}>
-                  {cols.map((c) => (
-                    <TableCell key={c.key}>
-                      <Skeleton className="h-4 w-full" />
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            : dataSource.length === 0
-              ? (
-                  <TableRow>
-                    <TableCell colSpan={cols.length} className="h-24 text-center text-muted-foreground">
-                      {empty}
-                    </TableCell>
-                  </TableRow>
-                )
-              : dataSource.map((r) => (
-                  <TableRow key={rowKey(r)}>
+    <div className={cn('overflow-x-auto rounded-xl border bg-card shadow-sm', className)}>
+      <div className="min-w-[960px]">
+        <UITable>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              {cols.map((c) => (
+                <TableHead key={c.key} style={{ width: c.width }}>
+                  {c.title}
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading
+              ? Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={`skeleton-${i}`}>
                     {cols.map((c) => (
-                      <TableCell key={c.key}>{c.render ? c.render(r) : String((r as any)[c.key])}</TableCell>
+                      <TableCell key={c.key}>
+                        <Skeleton className="h-4 w-full" />
+                      </TableCell>
                     ))}
                   </TableRow>
-                ))}
-        </TableBody>
-      </UITable>
+                ))
+              : dataSource.length === 0
+                ? (
+                    <TableRow>
+                      <TableCell colSpan={cols.length} className="h-24 text-center text-muted-foreground">
+                        {empty}
+                      </TableCell>
+                    </TableRow>
+                  )
+                : dataSource.map((r) => (
+                    <TableRow key={rowKey(r)}>
+                      {cols.map((c) => (
+                        <TableCell key={c.key}>{c.render ? c.render(r) : String((r as any)[c.key])}</TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+          </TableBody>
+        </UITable>
+      </div>
     </div>
   )
 }

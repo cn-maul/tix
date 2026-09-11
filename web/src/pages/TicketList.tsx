@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
-import { Search, Pencil, Trash2, Eye, Download, CheckCheck } from 'lucide-react'
+import { Pencil, Trash2, Eye, CheckCheck } from 'lucide-react'
 import {
   fetchList,
   deleteTicket,
@@ -13,19 +13,14 @@ import {
   type Ticket,
 } from '../api/tickets'
 import { fetchCategories } from '../api/categories'
+import TicketFilters from '../components/tickets/TicketFilters'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { DataTable, PaginationBar, type Column } from '@/components/Table'
+import PageHeader from '@/components/PageHeader'
 import DeleteConfirm from '@/components/DeleteConfirm'
 import StatusBadge from '@/components/StatusBadge'
+import { readableTextColor } from '@/lib/utils'
 
 type AssigneeFilter = 'all' | 'me' | 'unassigned'
 
@@ -183,7 +178,13 @@ export default function TicketList({ status }: { status: 0 | 1 | '' }) {
       key: 'category',
       width: 110,
       render: (r: Ticket) => (
-        <Badge variant="secondary" style={{ backgroundColor: catColor[r.category], color: '#fff' }}>
+        <Badge
+          variant="secondary"
+          style={{
+            backgroundColor: catColor[r.category],
+            color: catColor[r.category] ? readableTextColor(catColor[r.category]) : undefined,
+          }}
+        >
           {r.category}
         </Badge>
       ),
@@ -277,76 +278,34 @@ export default function TicketList({ status }: { status: 0 | 1 | '' }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold">{title}</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <Select
-            value={category || 'all'}
-            onValueChange={(v) => {
-              setCategory(v === 'all' ? '' : v)
-              setPage(1)
-            }}
-          >
-            <SelectTrigger className="w-32">
-              <SelectValue placeholder="全部分类" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部分类</SelectItem>
-              {(categories ?? []).map((c) => (
-                <SelectItem key={c.id} value={c.name}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <div className="flex items-center gap-1.5">
-            <Input
-              type="date"
-              className="w-[9.5rem]"
-              aria-label="创建日期起"
-              value={from}
-              onChange={(e) => setDateRange(e.target.value, to)}
-            />
-            <span className="text-xs text-muted-foreground">至</span>
-            <Input
-              type="date"
-              className="w-[9.5rem]"
-              aria-label="创建日期止"
-              value={to}
-              onChange={(e) => setDateRange(from, e.target.value)}
-            />
-          </div>
-          <Select
-            value={assignee}
-            onValueChange={(v) => {
-              setAssignee(v as AssigneeFilter)
-              setPage(1)
-            }}
-          >
-            <SelectTrigger className="w-32">
-              <SelectValue placeholder="负责人" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部负责人</SelectItem>
-              <SelectItem value="unassigned">未指派</SelectItem>
-              <SelectItem value="me">我负责的</SelectItem>
-            </SelectContent>
-          </Select>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="w-48 pl-8"
-              placeholder="搜索内容 / 发起人 / 手机号"
-              value={keyword}
-              onChange={(e) => onKeywordChange(e.target.value)}
-            />
-          </div>
-          <Button variant="outline" onClick={onExport} loading={exporting}>
-            {!exporting && <Download />}
-            导出 CSV
+      <PageHeader
+        title={title}
+        action={
+          <Button onClick={() => navigate('/tickets/new')}>
+            新建工单
           </Button>
-        </div>
-      </div>
+        }
+      />
+      <TicketFilters
+        keyword={keyword}
+        onKeywordChange={onKeywordChange}
+        categories={categories}
+        category={category}
+        onCategoryChange={(v) => {
+          setCategory(v === 'all' ? '' : v)
+          setPage(1)
+        }}
+        from={from}
+        to={to}
+        onDateRangeChange={setDateRange}
+        assignee={assignee}
+        onAssigneeChange={(v) => {
+          setAssignee(v)
+          setPage(1)
+        }}
+        onExport={onExport}
+        exporting={exporting}
+      />
 
       {selected.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/50 px-4 py-2.5">

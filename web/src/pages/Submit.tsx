@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  CheckCircle2,
   ListChecks,
   Search,
   ChevronDown,
@@ -39,6 +38,7 @@ import {
 import { fetchSubmitCategories } from '@/api/categories'
 import { getSettings } from '@/api/settings'
 import StatusBadge from '@/components/StatusBadge'
+import SubmitSuccess from '@/components/submit/SubmitSuccess'
 
 const fallbackCategories = ['硬件故障', '软件问题', '网络问题', '打印机故障', '其他']
 
@@ -166,32 +166,15 @@ export default function Submit() {
 
   if (submitted) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
-        <Card className="w-full max-w-sm shadow-lg">
-          <CardContent className="flex flex-col items-center gap-3 pt-8 text-center">
-            <CheckCircle2 className="size-12 text-emerald-500" />
-            <h2 className="text-lg font-semibold">提交成功</h2>
-            <p className="text-sm text-muted-foreground">
-              工单已提交，我们会尽快处理。
-              <br />
-              可随时凭手机号 <span className="font-medium text-foreground">{lastPhone}</span> 查询进度
-            </p>
-            <div className="mt-2 flex w-full flex-col gap-2">
-              <Button onClick={() => goTrack(lastPhone)}>查看我的报修</Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  reset()
-                  setSubmitted(false)
-                  setTab('submit')
-                }}
-              >
-                再提交一条
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <SubmitSuccess
+        phone={lastPhone}
+        onTrack={() => goTrack(lastPhone)}
+        onSubmitAnother={() => {
+          reset()
+          setSubmitted(false)
+          setTab('submit')
+        }}
+      />
     )
   }
 

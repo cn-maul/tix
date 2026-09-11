@@ -35,7 +35,8 @@ export default function SettingsLayout() {
           {APP_VERSION_LABEL}
         </span>
       </div>
-      <div className="flex w-fit items-center gap-1 rounded-lg bg-muted p-1">
+      <div className="max-w-full overflow-x-auto rounded-lg bg-muted p-1">
+        <div className="flex w-max items-center gap-1">
         {tabs.map((t) => (
           <NavLink
             key={t.to}
@@ -53,6 +54,7 @@ export default function SettingsLayout() {
             {t.label}
           </NavLink>
         ))}
+        </div>
       </div>
       <Outlet />
     </div>

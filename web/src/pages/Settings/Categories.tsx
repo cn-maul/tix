@@ -24,6 +24,7 @@ import {
 import { DataTable, type Column } from '@/components/Table'
 import DeleteConfirm from '@/components/DeleteConfirm'
 import { useFormState, validateCategory, type CategoryFormValues } from '@/lib/validation'
+import { readableTextColor } from '@/lib/utils'
 
 const emptyCategory: CategoryFormValues = { name: '', color: '#2563eb', sort: 0, enabled: true }
 
@@ -113,7 +114,10 @@ export default function Categories() {
       title: '名称',
       key: 'name',
       render: (r) => (
-        <Badge variant="secondary" style={{ backgroundColor: r.color, color: '#fff' }}>
+        <Badge
+          variant="secondary"
+          style={{ backgroundColor: r.color, color: readableTextColor(r.color || '#2563eb') }}
+        >
           {r.name}
         </Badge>
       ),

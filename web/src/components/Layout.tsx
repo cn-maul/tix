@@ -130,6 +130,9 @@ export default function Layout() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center justify-end gap-1.5 border-b bg-background px-4">
+          <Button className="mr-auto" size="sm" onClick={() => navigate('/tickets/new')}>
+            新建工单
+          </Button>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" onClick={toggle} aria-label="切换主题">
@@ -162,7 +165,9 @@ export default function Layout() {
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
-          <Outlet />
+          <div className="mx-auto w-full max-w-[1600px]">
+            <Outlet />
+          </div>
         </main>
       </div>
 

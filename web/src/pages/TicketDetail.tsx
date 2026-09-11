@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ArrowLeft, CheckCircle2, Pencil, Trash2, MessageSquarePlus, UserRound } from 'lucide-react'
@@ -51,7 +51,7 @@ export default function TicketDetail() {
     queryKey: ['ticket', numId],
     queryFn: () => fetchOne(numId),
   })
-  const { data: comments, isLoading: loadingC, refetch: refetchC } = useQuery({
+  const { data: comments, isLoading: loadingC } = useQuery({
     queryKey: ['comments', numId],
     queryFn: () => fetchComments(numId),
     enabled: !!numId,
@@ -63,24 +63,42 @@ export default function TicketDetail() {
     enabled: !!numId,
   })
 
+  const doneMutation = useMutation({
+    mutationFn: ({ noteText }: { noteText?: string }) =>
+      markDone(ticket!.id, noteText, noteText ? authorName : undefined),
+    onSuccess: () => {
+      setNote('')
+      queryClient.invalidateQueries({ queryKey: ['stats'] })
+      queryClient.invalidateQueries({ queryKey: ['tickets'] })
+      toast.success('已标记处理')
+      navigate('/tickets/done')
+    },
+    onError: (e: any) => toast.error(e?.message ?? '标记处理失败'),
+  })
+
+  const commentMutation = useMutation({
+    mutationFn: (content: string) => addComment(ticket!.id, authorName, content),
+    onSuccess: () => {
+      setComment('')
+      queryClient.invalidateQueries({ queryKey: ['comments', numId] })
+      toast.success('已添加备注')
+    },
+    onError: (e: any) => toast.error(e?.message ?? '添加备注失败'),
+  })
+
   if (loadingT) return <PageSpinner />
   if (!ticket) return <div className="text-muted-foreground">工单不存在</div>
 
-  const onDone = async () => {
+  const onDone = () => {
     const noteText = note.trim()
-    await markDone(ticket.id, noteText || undefined, noteText ? authorName : undefined)
-    setNote('')
-    queryClient.invalidateQueries({ queryKey: ['stats'] })
-    toast.success('已标记处理')
-    navigate('/tickets/done')
+    if (doneMutation.isPending) return
+    doneMutation.mutate({ noteText: noteText || undefined })
   }
 
-  const onComment = async () => {
-    if (!comment.trim()) return
-    await addComment(ticket.id, authorName, comment.trim())
-    setComment('')
-    refetchC()
-    toast.success('已添加备注')
+  const onComment = () => {
+    const content = comment.trim()
+    if (!content || commentMutation.isPending) return
+    commentMutation.mutate(content)
   }
 
   const onAssign = async (v: string) => {
@@ -184,8 +202,8 @@ export default function TicketDetail() {
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                 />
-                <Button onClick={onDone}>
-                  <CheckCircle2 /> 标记已处理
+                <Button onClick={onDone} loading={doneMutation.isPending}>
+                  {!doneMutation.isPending && <CheckCircle2 />} 标记已处理
                 </Button>
               </div>
             </div>
@@ -198,11 +216,11 @@ export default function TicketDetail() {
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') onComment()
+                if (e.key === 'Enter' && !commentMutation.isPending) onComment()
               }}
             />
-            <Button variant="outline" onClick={onComment}>
-              <MessageSquarePlus /> 添加
+            <Button variant="outline" onClick={onComment} loading={commentMutation.isPending}>
+              {!commentMutation.isPending && <MessageSquarePlus />} 添加
             </Button>
           </div>
 
